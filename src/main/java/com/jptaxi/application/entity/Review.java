@@ -1,8 +1,11 @@
 package com.jptaxi.application.entity;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -13,6 +16,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -43,33 +47,30 @@ public class Review {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(name = "user_name", nullable = false)
-    private String userName;
-
-    @Column(name = "user_avatar", columnDefinition = "TEXT")
-    private String userAvatar;
-
     @Column(name = "rating", nullable = false)
     private Integer rating;
 
     @Column(name = "comment", nullable = false, columnDefinition = "TEXT")
     private String comment;
 
-    @Column(name = "review_date", nullable = false)
-    private LocalDate reviewDate;
+    @Column(name = "likes_count", nullable = false)
+    private Integer likesCount = 0;
 
-    @Column(name = "likes", nullable = false)
-    private Integer likes = 0;
+    @Column(name = "dislikes_count", nullable = false)
+    private Integer dislikesCount = 0;
 
-    @Column(name = "dislikes", nullable = false)
-    private Integer dislikes = 0;
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
 
-    @Column(name = "user_liked")
-    private Boolean userLiked = false;
-
-    @Column(name = "user_disliked")
-    private Boolean userDisliked = false;
+    @UpdateTimestamp
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
 
     @OneToMany(mappedBy = "review", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("sortOrder ASC")
     private List<ReviewImage> images = new ArrayList<>();
+
+    @OneToMany(mappedBy = "review", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ReviewReaction> reactions = new ArrayList<>();
 }

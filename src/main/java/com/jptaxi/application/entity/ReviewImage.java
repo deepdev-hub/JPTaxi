@@ -1,5 +1,9 @@
 package com.jptaxi.application.entity;
 
+import java.time.LocalDateTime;
+
+import org.hibernate.annotations.CreationTimestamp;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -33,5 +37,9 @@ public class ReviewImage {
     private String imageUrl;
 
     @Column(name = "sort_order")
-    private Integer sortOrder = 0;
+    private Integer sortOrder = 1;
+
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
 }

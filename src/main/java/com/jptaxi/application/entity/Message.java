@@ -2,6 +2,8 @@ package com.jptaxi.application.entity;
 
 import java.time.LocalDateTime;
 
+import org.hibernate.annotations.CreationTimestamp;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -21,10 +23,9 @@ import lombok.Setter;
 @Table(
         name = "messages",
         indexes = {
+                @Index(name = "idx_messages_conversation_id", columnList = "conversation_id"),
                 @Index(name = "idx_messages_sender_id", columnList = "sender_id"),
-                @Index(name = "idx_messages_receiver_id", columnList = "receiver_id"),
-                @Index(name = "idx_messages_restaurant_id", columnList = "restaurant_id"),
-                @Index(name = "idx_messages_sent_at", columnList = "sent_at")
+                @Index(name = "idx_messages_created_at", columnList = "created_at")
         }
 )
 public class Message {
@@ -34,23 +35,28 @@ public class Message {
     private String id;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "conversation_id", nullable = false)
+    private Conversation conversation;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "sender_id", nullable = false)
     private User sender;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "receiver_id", nullable = false)
+    @JoinColumn(name = "receiver_id")
     private User receiver;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "restaurant_id")
     private Restaurant restaurant;
 
-    @Column(name = "content", nullable = false, columnDefinition = "TEXT")
+    @Column(name = "content", nullable = false, length = 500)
     private String content;
-
-    @Column(name = "sent_at", nullable = false)
-    private LocalDateTime sentAt;
 
     @Column(name = "is_read", nullable = false)
     private Boolean isRead = false;
+
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
 }

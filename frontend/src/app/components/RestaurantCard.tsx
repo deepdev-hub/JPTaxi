@@ -1,7 +1,7 @@
 import React from "react";
 import { Link } from "react-router";
 import { MapPin, Clock, Star, ChevronRight } from "lucide-react";
-import { Restaurant } from "../data/mockData";
+import type { Restaurant } from "../types";
 import { StarRating } from "./StarRating";
 import { useLanguage } from "../context/LanguageContext";
 

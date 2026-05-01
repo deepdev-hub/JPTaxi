@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router";
 import { ChevronLeft, Upload, X, AlertCircle, CheckCircle, Star } from "lucide-react";
-import { mockRestaurants } from "../data/mockData";
+import { createReview, getRestaurant } from "../api/client";
+import type { Restaurant } from "../types";
 import { StarRating } from "../components/StarRating";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -9,16 +10,38 @@ import { useLanguage } from "../context/LanguageContext";
 export function WriteReviewPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, currentUser } = useAuth();
   const { t } = useLanguage();
 
-  const restaurant = mockRestaurants.find((r) => r.id === id);
-
+  const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
+  const [loadingRestaurant, setLoadingRestaurant] = useState(true);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!id) return;
+
+    let mounted = true;
+    setLoadingRestaurant(true);
+
+    getRestaurant(id)
+      .then((data) => {
+        if (mounted) setRestaurant(data);
+      })
+      .catch(() => {
+        if (mounted) setRestaurant(null);
+      })
+      .finally(() => {
+        if (mounted) setLoadingRestaurant(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [id]);
 
   if (!isLoggedIn) {
     return (
@@ -27,6 +50,14 @@ export function WriteReviewPage() {
           <p className="text-gray-500 mb-4">{t.review.loginRequired}</p>
           <Link to="/login" className="text-blue-600 hover:underline">{t.review.back}</Link>
         </div>
+      </div>
+    );
+  }
+
+  if (loadingRestaurant) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-sm text-gray-400">Loading...</p>
       </div>
     );
   }
@@ -51,9 +82,16 @@ export function WriteReviewPage() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validate()) return;
+    if (!validate() || !id || !currentUser) return;
+    await createReview({
+      restaurantId: id,
+      userId: currentUser.id,
+      rating,
+      comment,
+      images,
+    });
     setSubmitted(true);
     setTimeout(() => { navigate(`/restaurant/${id}`); }, 2000);
   };

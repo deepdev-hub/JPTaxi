@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router";
 import { Search, MapPin, Clock, Star, ChevronRight, Sparkles, Navigation } from "lucide-react";
-import { mockRestaurants } from "../data/mockData";
+import { getRestaurants } from "../api/client";
 import { RestaurantCard } from "../components/RestaurantCard";
 import { useAuth } from "../context/AuthContext";
+import { useApiData } from "../hooks/useApiData";
 import { useLanguage } from "../context/LanguageContext";
 
 export function HomePage() {
@@ -12,6 +13,7 @@ export function HomePage() {
   const navigate = useNavigate();
   const { isLoggedIn } = useAuth();
   const { t } = useLanguage();
+  const { data: restaurants } = useApiData(getRestaurants, [], []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,8 +25,8 @@ export function HomePage() {
     navigate(`/search?filter=${filter}`);
   };
 
-  const featuredRestaurants = mockRestaurants.filter((r) => r.rating >= 4.5).slice(0, 3);
-  const nearbyRestaurants = [...mockRestaurants].sort((a, b) => (a.distance || 0) - (b.distance || 0)).slice(0, 3);
+  const featuredRestaurants = restaurants.filter((r) => r.rating >= 4.5).slice(0, 3);
+  const nearbyRestaurants = [...restaurants].sort((a, b) => (a.distance || 0) - (b.distance || 0)).slice(0, 3);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -174,7 +176,7 @@ export function HomePage() {
                     </svg>
 
                     {/* Restaurant pins */}
-                    {mockRestaurants.slice(0, 4).map((r, i) => {
+                    {restaurants.slice(0, 4).map((r, i) => {
                       const positions = [
                         { left: "25%", top: "25%" },
                         { left: "55%", top: "45%" },

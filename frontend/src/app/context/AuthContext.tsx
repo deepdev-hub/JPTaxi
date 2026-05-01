@@ -1,13 +1,14 @@
 import React, { createContext, useContext, useState, ReactNode } from "react";
-import { User, mockUsers } from "../data/mockData";
+import { createUser, getUserByEmail, updateUser } from "../api/client";
+import type { User } from "../types";
 
 interface AuthContextType {
   currentUser: User | null;
   isLoggedIn: boolean;
-  login: (email: string, password: string) => boolean;
+  login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
-  signup: (email: string, password: string, name: string, role: "diner" | "owner") => boolean;
-  updateProfile: (data: Partial<User>) => void;
+  signup: (email: string, password: string, name: string, role: "diner" | "owner") => Promise<boolean>;
+  updateProfile: (data: Partial<User>) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -15,39 +16,43 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
-  const login = (email: string, password: string): boolean => {
-    // Mock login - accept any password, just match email
-    const user = mockUsers.find((u) => u.email === email);
-    if (user) {
+  const login = async (email: string, password: string): Promise<boolean> => {
+    if (!email || !password) return false;
+
+    try {
+      const user = await getUserByEmail(email);
       setCurrentUser(user);
       return true;
+    } catch {
+      return false;
     }
-    // Allow demo login
-    if (email && password) {
-      setCurrentUser(mockUsers[0]);
-      return true;
-    }
-    return false;
   };
 
   const logout = () => {
     setCurrentUser(null);
   };
 
-  const signup = (email: string, password: string, name: string, role: "diner" | "owner"): boolean => {
-    const newUser: User = {
-      id: `u${Date.now()}`,
-      name,
-      email,
-      role,
-    };
-    setCurrentUser(newUser);
-    return true;
+  const signup = async (email: string, password: string, name: string, role: "diner" | "owner"): Promise<boolean> => {
+    if (!email || !password || !name) return false;
+
+    try {
+      const newUser = await createUser({ name, email, password, role });
+      setCurrentUser(newUser);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
-  const updateProfile = (data: Partial<User>) => {
-    if (currentUser) {
-      setCurrentUser({ ...currentUser, ...data });
+  const updateProfile = async (data: Partial<User>): Promise<boolean> => {
+    if (!currentUser) return false;
+
+    try {
+      const savedUser = await updateUser(currentUser.id, data);
+      setCurrentUser(savedUser);
+      return true;
+    } catch {
+      return false;
     }
   };
 
