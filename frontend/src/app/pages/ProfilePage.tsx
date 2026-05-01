@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router";
 import { User, Mail, Phone, MapPin, Lock, Save, Store, Camera, CheckCircle } from "lucide-react";
+import { updateUser } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 
@@ -18,6 +19,7 @@ export function ProfilePage() {
 
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"profile" | "password">("profile");
 
   useEffect(() => {
@@ -26,19 +28,26 @@ export function ProfilePage() {
 
   if (!isLoggedIn || !currentUser) return null;
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateProfile(formData);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    setSaving(true);
+    const success = await updateProfile(formData);
+    setSaving(false);
+    if (success) {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    }
   };
 
-  const handlePasswordChange = (e: React.FormEvent) => {
+  const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     if (passwords.new !== passwords.confirm) {
       alert(t.profile.passwordMismatch);
       return;
     }
+    setSaving(true);
+    await updateUser(currentUser.id, { password: passwords.new });
+    setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
     setPasswords({ current: "", new: "", confirm: "" });
@@ -175,6 +184,7 @@ export function ProfilePage() {
 
               <button
                 type="submit"
+                disabled={saving}
                 className="w-full flex items-center justify-center gap-2 py-3 text-white rounded-xl text-sm transition-all hover:opacity-90"
                 style={{ background: "linear-gradient(135deg, #0066CC 0%, #004499 100%)" }}
               >
@@ -234,6 +244,7 @@ export function ProfilePage() {
 
               <button
                 type="submit"
+                disabled={saving}
                 className="w-full flex items-center justify-center gap-2 py-3 text-white rounded-xl text-sm transition-all hover:opacity-90"
                 style={{ background: "linear-gradient(135deg, #0066CC 0%, #004499 100%)" }}
               >

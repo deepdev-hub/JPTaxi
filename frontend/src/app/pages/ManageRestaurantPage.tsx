@@ -1,43 +1,171 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router";
 import {
   ChevronLeft, Save, Upload, Plus, X, CheckCircle, ToggleLeft, ToggleRight
 } from "lucide-react";
-import { mockRestaurants, foodTags } from "../data/mockData";
+import { getFoodTags, getRestaurant, updateRestaurant } from "../api/client";
+import type { MenuItem, Restaurant } from "../types";
 import { useAuth } from "../context/AuthContext";
+import { useApiData } from "../hooks/useApiData";
 
 export function ManageRestaurantPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { isLoggedIn } = useAuth();
-
-  const restaurant = mockRestaurants.find((r) => r.id === id) || mockRestaurants[0];
+  const { data: foodTags } = useApiData(getFoodTags, [], []);
+  const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   const [formData, setFormData] = useState({
-    nameVn: restaurant.nameVn,
-    nameJp: restaurant.nameJp,
-    address: restaurant.address,
-    phone: restaurant.phone,
-    description: restaurant.description,
-    descriptionJp: restaurant.descriptionJp || "",
-    openHours: restaurant.openHours,
-    avgPrice: restaurant.avgPrice.toString(),
-    status: restaurant.status,
-    selectedTags: restaurant.tags,
+    nameVn: "",
+    nameJp: "",
+    address: "",
+    phone: "",
+    description: "",
+    descriptionJp: "",
+    openHours: "",
+    avgPrice: "",
+    status: "closed" as "open" | "closed",
+    selectedTags: [] as string[],
   });
 
   const [saved, setSaved] = useState(false);
   const [activeTab, setActiveTab] = useState<"basic" | "menu" | "photos">("basic");
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [images, setImages] = useState<string[]>([]);
+
+  const sampleImages = [
+    "https://images.unsplash.com/photo-1677837914128-2367031a11e7?w=600&h=400&fit=crop",
+    "https://images.unsplash.com/photo-1761409260819-c6da12bbb2c0?w=600&h=400&fit=crop",
+    "https://images.unsplash.com/photo-1763703544688-2ac7839b0659?w=600&h=400&fit=crop",
+  ];
+
+  useEffect(() => {
+    if (!id) return;
+
+    let mounted = true;
+    setLoading(true);
+
+    getRestaurant(id)
+      .then((data) => {
+        if (!mounted) return;
+        setRestaurant(data);
+        setFormData({
+          nameVn: data.nameVn,
+          nameJp: data.nameJp,
+          address: data.address,
+          phone: data.phone,
+          description: data.description,
+          descriptionJp: data.descriptionJp || "",
+          openHours: data.openHours,
+          avgPrice: data.avgPrice.toString(),
+          status: data.status === "open" ? "open" : "closed",
+          selectedTags: data.tags,
+        });
+        setMenuItems(data.menu);
+        setImages(data.images);
+      })
+      .catch(() => {
+        if (mounted) setRestaurant(null);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [id]);
 
   if (!isLoggedIn) {
     navigate("/login");
     return null;
   }
 
-  const handleSave = (e: React.FormEvent) => {
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-sm text-gray-400">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!restaurant) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Link to="/owner/restaurants" className="text-blue-600 hover:underline">
+          Restaurant not found
+        </Link>
+      </div>
+    );
+  }
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    if (!restaurant) return;
+
+    try {
+      setSaving(true);
+      const savedRestaurant = await updateRestaurant(restaurant.id, {
+        ownerId: restaurant.ownerId,
+        nameVn: formData.nameVn,
+        nameJp: formData.nameJp,
+        address: formData.address,
+        addressJp: restaurant.addressJp,
+        phone: formData.phone,
+        description: formData.description,
+        descriptionJp: formData.descriptionJp,
+        coverImage: images[0] || restaurant.coverImage,
+        images,
+        menu: menuItems.filter((item) => item.nameVn.trim()),
+        openHours: formData.openHours,
+        priceRange: restaurant.priceRange,
+        avgPrice: Number(formData.avgPrice) || 0,
+        tags: formData.selectedTags,
+        status: formData.status,
+        lat: restaurant.lat,
+        lng: restaurant.lng,
+      });
+
+      setRestaurant(savedRestaurant);
+      setMenuItems(savedRestaurant.menu);
+      setImages(savedRestaurant.images);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateMenuItem = (index: number, field: keyof MenuItem, value: string) => {
+    setMenuItems((prev) =>
+      prev.map((item, i) =>
+        i === index
+          ? {
+              ...item,
+              [field]: field === "price" ? Number(value) || 0 : value,
+            }
+          : item
+      )
+    );
+  };
+
+  const addMenuItem = () => {
+    setMenuItems((prev) => [
+      ...prev,
+      { id: `new-${Date.now()}`, nameVn: "", nameJp: "", price: 0, description: "" },
+    ]);
+  };
+
+  const removeMenuItem = (index: number) => {
+    setMenuItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const addSampleImage = () => {
+    if (images.length < 8) {
+      setImages((prev) => [...prev, sampleImages[prev.length % sampleImages.length]]);
+    }
   };
 
   const toggleTag = (tag: string) => {
@@ -232,6 +360,7 @@ export function ManageRestaurantPage() {
 
               <button
                 type="submit"
+                disabled={saving}
                 className="w-full flex items-center justify-center gap-2 py-3 text-white rounded-xl text-sm transition-all hover:opacity-90"
                 style={{ background: "linear-gradient(135deg, #0066CC 0%, #004499 100%)" }}
               >
@@ -248,6 +377,7 @@ export function ManageRestaurantPage() {
                 <h3 className="text-gray-900">メニュー管理</h3>
                 <button
                   type="button"
+                  onClick={addMenuItem}
                   className="flex items-center gap-1.5 px-3 py-2 text-sm text-blue-600 border border-blue-200 rounded-xl hover:bg-blue-50"
                 >
                   <Plus className="w-4 h-4" />
@@ -255,34 +385,39 @@ export function ManageRestaurantPage() {
                 </button>
               </div>
               <div className="space-y-3">
-                {restaurant.menu.map((item) => (
-                  <div key={item.id} className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">
+                {menuItems.map((item, index) => (
+                  <div key={`${item.id}-${index}`} className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">
                     <div className="flex-1 grid grid-cols-2 gap-2">
                       <input
                         type="text"
-                        defaultValue={item.nameVn}
+                        value={item.nameVn}
+                        onChange={(e) => updateMenuItem(index, "nameVn", e.target.value)}
                         className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
                       />
                       <input
                         type="text"
-                        defaultValue={item.nameJp}
+                        value={item.nameJp}
+                        onChange={(e) => updateMenuItem(index, "nameJp", e.target.value)}
                         className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
                       />
                       <input
                         type="number"
-                        defaultValue={item.price}
+                        value={item.price}
+                        onChange={(e) => updateMenuItem(index, "price", e.target.value)}
                         className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
                         placeholder="価格"
                       />
                       <input
                         type="text"
-                        defaultValue={item.description}
+                        value={item.description || ""}
+                        onChange={(e) => updateMenuItem(index, "description", e.target.value)}
                         className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
                         placeholder="説明"
                       />
                     </div>
                     <button
                       type="button"
+                      onClick={() => removeMenuItem(index)}
                       className="w-7 h-7 bg-red-50 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-100 flex-shrink-0 mt-1"
                     >
                       <X className="w-4 h-4" />
@@ -292,6 +427,7 @@ export function ManageRestaurantPage() {
               </div>
               <button
                 type="submit"
+                disabled={saving}
                 className="w-full flex items-center justify-center gap-2 py-3 mt-5 text-white rounded-xl text-sm transition-all hover:opacity-90"
                 style={{ background: "linear-gradient(135deg, #0066CC 0%, #004499 100%)" }}
               >
@@ -307,11 +443,12 @@ export function ManageRestaurantPage() {
               <div className="bg-white rounded-2xl border border-gray-100 p-6">
                 <h3 className="text-gray-900 mb-4">写真管理</h3>
                 <div className="grid grid-cols-2 gap-3">
-                  {restaurant.images.map((img, i) => (
+                  {images.map((img, i) => (
                     <div key={i} className="aspect-video rounded-xl overflow-hidden relative group">
                       <img src={img} alt="restaurant" className="w-full h-full object-cover" />
                       <button
                         type="button"
+                        onClick={() => setImages(images.filter((_, index) => index !== i))}
                         className="absolute top-2 right-2 w-7 h-7 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                       >
                         <X className="w-4 h-4 text-white" />
@@ -320,6 +457,7 @@ export function ManageRestaurantPage() {
                   ))}
                   <button
                     type="button"
+                    onClick={addSampleImage}
                     className="aspect-video rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-blue-300 hover:text-blue-400 transition-colors"
                   >
                     <Upload className="w-6 h-6" />
@@ -350,6 +488,7 @@ export function ManageRestaurantPage() {
 
               <button
                 type="submit"
+                disabled={saving}
                 className="w-full flex items-center justify-center gap-2 py-3 text-white rounded-xl text-sm transition-all hover:opacity-90"
                 style={{ background: "linear-gradient(135deg, #0066CC 0%, #004499 100%)" }}
               >

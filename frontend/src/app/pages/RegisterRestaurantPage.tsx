@@ -4,8 +4,9 @@ import {
   ChevronLeft, Plus, X, Upload, Clock, MapPin, Tag,
   CheckCircle, AlertCircle, DollarSign
 } from "lucide-react";
+import { createRestaurant, getFoodTags } from "../api/client";
 import { useAuth } from "../context/AuthContext";
-import { foodTags } from "../data/mockData";
+import { useApiData } from "../hooks/useApiData";
 
 interface MenuItemForm {
   nameVn: string;
@@ -16,7 +17,8 @@ interface MenuItemForm {
 
 export function RegisterRestaurantPage() {
   const navigate = useNavigate();
-  const { isLoggedIn } = useAuth();
+  const { currentUser, isLoggedIn } = useAuth();
+  const { data: foodTags } = useApiData(getFoodTags, [], []);
 
   const [formData, setFormData] = useState({
     nameVn: "",
@@ -36,10 +38,11 @@ export function RegisterRestaurantPage() {
 
   const [images, setImages] = useState<string[]>([]);
   const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [currentStep, setCurrentStep] = useState(1);
 
-  if (!isLoggedIn) {
+  if (!isLoggedIn || !currentUser) {
     navigate("/login");
     return null;
   }
@@ -94,12 +97,50 @@ export function RegisterRestaurantPage() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
-    setTimeout(() => {
-      navigate("/owner/restaurants");
-    }, 2000);
+    if (!validateStep(1)) {
+      setCurrentStep(1);
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await createRestaurant({
+        ownerId: currentUser.id,
+        nameVn: formData.nameVn,
+        nameJp: formData.nameJp,
+        address: formData.address,
+        phone: formData.phone,
+        description: formData.description,
+        descriptionJp: formData.descriptionJp,
+        coverImage: images[0],
+        images,
+        menu: menuItems
+          .filter((item) => item.nameVn.trim())
+          .map((item, index) => ({
+            id: `new-${index}`,
+            nameVn: item.nameVn,
+            nameJp: item.nameJp || item.nameVn,
+            price: Number(item.price) || 0,
+            description: item.description,
+          })),
+        openHours: formData.openHours,
+        avgPrice: Number(formData.avgPrice) || 0,
+        tags: formData.selectedTags,
+        status: "closed",
+        lat: 21.027764,
+        lng: 105.83416,
+      });
+      setSubmitted(true);
+      setTimeout(() => {
+        navigate("/owner/restaurants");
+      }, 2000);
+    } catch {
+      setErrors({ submit: "Cannot save restaurant. Please check backend and database connection." });
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (submitted) {
@@ -162,6 +203,13 @@ export function RegisterRestaurantPage() {
             </React.Fragment>
           ))}
         </div>
+
+        {errors.submit && (
+          <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            {errors.submit}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit}>
           {/* Step 1: Basic Info */}
@@ -469,6 +517,7 @@ export function RegisterRestaurantPage() {
                 </button>
                 <button
                   type="submit"
+                  disabled={saving}
                   className="flex-1 py-3 text-white rounded-xl text-sm transition-all hover:opacity-90"
                   style={{ background: "linear-gradient(135deg, #0066CC 0%, #004499 100%)" }}
                 >

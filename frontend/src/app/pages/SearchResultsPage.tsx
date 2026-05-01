@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from "react";
 import { useSearchParams, Link } from "react-router";
 import { Search, MapPin, SlidersHorizontal, Star, Clock, X, ChevronDown, Navigation } from "lucide-react";
-import { mockRestaurants, Restaurant, foodTags } from "../data/mockData";
+import { getFoodTags, getRestaurants } from "../api/client";
 import { RestaurantCard } from "../components/RestaurantCard";
 import { StarRating } from "../components/StarRating";
+import { useApiData } from "../hooks/useApiData";
 import { useLanguage } from "../context/LanguageContext";
 
 export function SearchResultsPage() {
@@ -36,9 +37,11 @@ export function SearchResultsPage() {
   const [selectedRestaurant, setSelectedRestaurant] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "map">("list");
+  const { data: restaurants } = useApiData(getRestaurants, [], []);
+  const { data: foodTags } = useApiData(getFoodTags, [], []);
 
   const filteredRestaurants = useMemo(() => {
-    let results = [...mockRestaurants];
+    let results = [...restaurants];
 
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -87,7 +90,7 @@ export function SearchResultsPage() {
     }
 
     return results;
-  }, [searchQuery, selectedTags, openOnly, selectedPriceRange, selectedDistance, minRating, filterParam]);
+  }, [restaurants, searchQuery, selectedTags, openOnly, selectedPriceRange, selectedDistance, minRating, filterParam]);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) =>

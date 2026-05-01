@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router";
 import {
   MapPin, Clock, Phone, MessageCircle, Star, ThumbsUp, ThumbsDown,
   Share2, QrCode, ChevronLeft, ExternalLink, Camera, ArrowRight
 } from "lucide-react";
-import { mockRestaurants, mockReviews, Review } from "../data/mockData";
+import { getRestaurant, getReviews } from "../api/client";
+import type { Restaurant, Review } from "../types";
 import { StarRating } from "../components/StarRating";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -18,12 +19,42 @@ export function RestaurantDetailPage() {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<TabType>("info");
   const [showQR, setShowQR] = useState(false);
-  const [reviews, setReviews] = useState<Review[]>(
-    mockReviews.filter((r) => r.restaurantId === id)
-  );
+  const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
-  const restaurant = mockRestaurants.find((r) => r.id === id);
+  useEffect(() => {
+    if (!id) return;
+
+    let mounted = true;
+    setLoading(true);
+
+    Promise.all([getRestaurant(id), getReviews(id)])
+      .then(([restaurantData, reviewData]) => {
+        if (!mounted) return;
+        setRestaurant(restaurantData);
+        setReviews(reviewData);
+      })
+      .catch(() => {
+        if (mounted) setRestaurant(null);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-sm text-gray-400">Loading...</p>
+      </div>
+    );
+  }
 
   if (!restaurant) {
     return (

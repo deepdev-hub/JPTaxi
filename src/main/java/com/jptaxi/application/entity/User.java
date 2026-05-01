@@ -1,10 +1,12 @@
 package com.jptaxi.application.entity;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
+import org.hibernate.annotations.ColumnTransformer;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -23,10 +25,7 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 @Entity
-@Table(
-        name = "users",
-        uniqueConstraints = @UniqueConstraint(name = "uk_users_email", columnNames = "email")
-)
+@Table(name = "users", uniqueConstraints = @UniqueConstraint(name = "users_email_key", columnNames = "email"))
 public class User {
 
     @Id
@@ -42,6 +41,9 @@ public class User {
     @Column(name = "email", nullable = false, unique = true)
     private String email;
 
+    @Column(name = "password_hash", nullable = false)
+    private String passwordHash;
+
     @Column(name = "phone", length = 50)
     private String phone;
 
@@ -49,18 +51,32 @@ public class User {
     private String address;
 
     @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @ColumnTransformer(write = "?::user_role")
     @Column(name = "role", nullable = false, columnDefinition = "user_role")
-    private UserRole role = UserRole.guest;
+    private UserRole role = UserRole.diner;
 
     @Column(name = "avatar", columnDefinition = "TEXT")
     private String avatar;
+
+    @Column(name = "enabled", nullable = false)
+    private Boolean enabled = true;
+
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @UpdateTimestamp
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
 
     @OneToMany(mappedBy = "owner", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Restaurant> restaurants = new ArrayList<>();
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Review> reviews = new ArrayList<>();
+
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ReviewReaction> reviewReactions = new ArrayList<>();
 
     @OneToMany(mappedBy = "sender")
     private List<Message> sentMessages = new ArrayList<>();
@@ -70,4 +86,7 @@ public class User {
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ConversationParticipant> conversationParticipants = new ArrayList<>();
+
+    @OneToMany(mappedBy = "createdBy")
+    private List<ShareLink> shareLinks = new ArrayList<>();
 }

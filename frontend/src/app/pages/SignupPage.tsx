@@ -43,7 +43,7 @@ export function SignupPage() {
     }
     setLoading(true);
     await new Promise((r) => setTimeout(r, 800));
-    const success = signup(formData.email, formData.password, formData.name, formData.role);
+    const success = await signup(formData.email, formData.password, formData.name, formData.role);
     setLoading(false);
     if (success) {
       navigate("/");

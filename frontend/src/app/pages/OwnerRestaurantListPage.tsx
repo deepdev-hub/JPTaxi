@@ -1,14 +1,20 @@
 import React from "react";
 import { Link, useNavigate } from "react-router";
 import { Plus, Star, MessageCircle, Edit, Store, ChevronRight, Eye } from "lucide-react";
-import { mockRestaurants } from "../data/mockData";
+import { getRestaurants } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { useApiData } from "../hooks/useApiData";
 import { useLanguage } from "../context/LanguageContext";
 
 export function OwnerRestaurantListPage() {
   const { currentUser, isLoggedIn } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const { data: restaurants } = useApiData(
+    () => currentUser ? getRestaurants(currentUser.id) : Promise.resolve([]),
+    [currentUser?.id],
+    []
+  );
 
   React.useEffect(() => {
     if (!isLoggedIn) navigate("/login");
@@ -16,8 +22,7 @@ export function OwnerRestaurantListPage() {
 
   if (!isLoggedIn || !currentUser) return null;
 
-  const myRestaurants = mockRestaurants.filter((r) => r.ownerId === currentUser.id);
-  const displayRestaurants = myRestaurants.length > 0 ? myRestaurants : mockRestaurants.slice(0, 3);
+  const displayRestaurants = restaurants;
 
   const formatPrice = (price: number) =>
     new Intl.NumberFormat("vi-VN").format(price) + "đ";

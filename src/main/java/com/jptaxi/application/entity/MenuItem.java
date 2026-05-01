@@ -1,6 +1,10 @@
 package com.jptaxi.application.entity;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -35,7 +39,7 @@ public class MenuItem {
     @Column(name = "name_vn", nullable = false)
     private String nameVn;
 
-    @Column(name = "name_jp", nullable = false)
+    @Column(name = "name_jp")
     private String nameJp;
 
     @Column(name = "price", nullable = false, precision = 12, scale = 2)
@@ -44,6 +48,20 @@ public class MenuItem {
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
+    @Column(name = "description_jp", columnDefinition = "TEXT")
+    private String descriptionJp;
+
     @Column(name = "image", columnDefinition = "TEXT")
     private String image;
+
+    @Column(name = "is_available", nullable = false)
+    private Boolean isAvailable = true;
+
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @UpdateTimestamp
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
 }
