@@ -199,6 +199,42 @@ CREATE TABLE public.messages (
 ALTER TABLE public.messages OWNER TO postgres;
 
 --
+-- Name: password_reset_tokens; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.password_reset_tokens (
+    id bigint NOT NULL,
+    email character varying(255) NOT NULL,
+    token character varying(255) NOT NULL,
+    expired_at timestamp without time zone NOT NULL,
+    used boolean DEFAULT false,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.password_reset_tokens OWNER TO postgres;
+
+--
+-- Name: password_reset_tokens_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.password_reset_tokens_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.password_reset_tokens_id_seq OWNER TO postgres;
+
+--
+-- Name: password_reset_tokens_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.password_reset_tokens_id_seq OWNED BY public.password_reset_tokens.id;
+
+--
 -- Name: products; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -466,6 +502,12 @@ CREATE TABLE public.users (
 ALTER TABLE public.users OWNER TO postgres;
 
 --
+-- Name: password_reset_tokens id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.password_reset_tokens ALTER COLUMN id SET DEFAULT nextval('public.password_reset_tokens_id_seq'::regclass);
+
+--
 -- Name: restaurant_images id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -543,6 +585,14 @@ msg3	conv1	u1	u2	r1	ありがとうございます！アレルギーは特にあ
 msg4	conv1	u2	u1	r1	承知しました！お待ちしております。	f	2026-03-26 09:12:00
 msg5	conv2	u3	u4	r2	すみません、ブンチャーのセットは何時まで注文できますか？	t	2026-03-26 11:30:00
 msg6	conv2	u4	u3	r2	21時まで営業しております。	f	2026-03-26 11:35:00
+\.
+
+
+--
+-- Data for Name: password_reset_tokens; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.password_reset_tokens (id, email, token, expired_at, used, created_at) FROM stdin;
 \.
 
 
@@ -664,6 +714,13 @@ u5	鈴木 一郎	鈴木 一郎	suzuki@example.com	$2a$10$7qPvW6QdFSgQu7Dk4S9Rq.B
 
 
 --
+-- Name: password_reset_tokens_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.password_reset_tokens_id_seq', 1, false);
+
+
+--
 -- Name: products_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
@@ -728,6 +785,22 @@ ALTER TABLE ONLY public.menu_items
 
 ALTER TABLE ONLY public.messages
     ADD CONSTRAINT messages_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: password_reset_tokens password_reset_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.password_reset_tokens
+    ADD CONSTRAINT password_reset_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: password_reset_tokens password_reset_tokens_token_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.password_reset_tokens
+    ADD CONSTRAINT password_reset_tokens_token_key UNIQUE (token);
 
 
 --

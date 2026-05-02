@@ -92,6 +92,13 @@ export function getUserByEmail(email: string) {
   return request<User>(`/users/by-email?email=${encodeURIComponent(email)}`);
 }
 
+export function loginUser(data: { email: string; password: string }) {
+  return request<User>("/users/login", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
 export function createUser(data: {
   name: string;
   email: string;
@@ -107,6 +114,20 @@ export function createUser(data: {
 export function updateUser(id: string, data: Partial<User> & { password?: string }) {
   return request<User>(`/users/${encodeURIComponent(id)}`, {
     method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export function requestPasswordReset(data: { email: string }) {
+  return request<{ message: string }>("/users/forgot-password", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function resetPassword(data: { token: string; newPassword: string }) {
+  return request<User>("/users/reset-password", {
+    method: "POST",
     body: JSON.stringify(data),
   });
 }

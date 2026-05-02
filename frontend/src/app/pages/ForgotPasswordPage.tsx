@@ -1,10 +1,10 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router";
-import { Mail, MapPin, AlertCircle, CheckCircle } from "lucide-react";
+import { Link } from "react-router";
+import { AlertCircle, CheckCircle, Mail, MapPin } from "lucide-react";
+import { requestPasswordReset } from "../api/client";
 import { useLanguage } from "../context/LanguageContext";
 
 export function ForgotPasswordPage() {
-  const navigate = useNavigate();
   const { t } = useLanguage();
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
@@ -15,13 +15,11 @@ export function ForgotPasswordPage() {
     e.preventDefault();
     setError("");
 
-    // Validation
     if (!email) {
       setError(t.forgotPassword.errorRequired);
       return;
     }
 
-    // Simple email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       setError(t.forgotPassword.errorInvalid);
@@ -29,25 +27,14 @@ export function ForgotPasswordPage() {
     }
 
     setLoading(true);
-
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    // Mock check: demo emails exist
-    const demoEmails = ["tanaka@example.com", "an.nguyen@example.com"];
-    if (!demoEmails.includes(email)) {
-      setError(t.forgotPassword.errorNotFound);
+    try {
+      await requestPasswordReset({ email });
+      setSuccess(true);
+    } catch {
+      setError("Khong the gui email reset mat khau. Vui long kiem tra cau hinh SMTP va thu lai.");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setLoading(false);
-    setSuccess(true);
-
-    // Redirect after 4 seconds
-    setTimeout(() => {
-      navigate("/login");
-    }, 4000);
   };
 
   if (success) {
@@ -59,10 +46,10 @@ export function ForgotPasswordPage() {
               <CheckCircle className="w-8 h-8 text-green-600" />
             </div>
             <h2 className="text-gray-900 mb-2">{t.forgotPassword.successTitle}</h2>
-            <p className="text-sm text-gray-600 mb-4">{t.forgotPassword.successDesc}</p>
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 mb-6">
-              <p className="text-xs text-blue-700">{t.forgotPassword.successNote}</p>
-            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Neu email nay ton tai trong he thong, chung toi da gui link reset mat khau den {email}.
+              Vui long mo email va dat mat khau moi.
+            </p>
             <Link
               to="/login"
               className="inline-block px-6 py-3 text-white rounded-xl text-sm transition-all hover:opacity-90"
@@ -79,7 +66,6 @@ export function ForgotPasswordPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center gap-2">
             <div
@@ -90,10 +76,11 @@ export function ForgotPasswordPage() {
             </div>
           </Link>
           <h1 className="text-gray-900 mt-4">{t.forgotPassword.title}</h1>
-          <p className="text-sm text-gray-400 mt-1">{t.forgotPassword.subtitle}</p>
+          <p className="text-sm text-gray-400 mt-1">
+            Nhap email da dang ky de nhan link reset mat khau
+          </p>
         </div>
 
-        {/* Form */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
           <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
@@ -133,15 +120,6 @@ export function ForgotPasswordPage() {
                 {t.forgotPassword.backToLogin}
               </Link>
             </p>
-          </div>
-        </div>
-
-        {/* Demo hint */}
-        <div className="mt-6 bg-white rounded-2xl border border-gray-100 p-5">
-          <p className="text-xs text-gray-400 mb-2 text-center">📧 Demo emails:</p>
-          <div className="space-y-1">
-            <p className="text-xs text-gray-600 text-center font-mono">tanaka@example.com</p>
-            <p className="text-xs text-gray-600 text-center font-mono">an.nguyen@example.com</p>
           </div>
         </div>
       </div>

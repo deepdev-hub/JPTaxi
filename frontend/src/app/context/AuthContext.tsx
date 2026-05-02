@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode } from "react";
-import { createUser, getUserByEmail, updateUser } from "../api/client";
+import { createUser, loginUser, updateUser } from "../api/client";
 import type { User } from "../types";
 
 interface AuthContextType {
@@ -20,7 +20,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!email || !password) return false;
 
     try {
-      const user = await getUserByEmail(email);
+      const user = await loginUser({ email, password });
       setCurrentUser(user);
       return true;
     } catch {
