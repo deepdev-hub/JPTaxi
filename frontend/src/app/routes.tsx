@@ -12,6 +12,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { SignupPage } from "./pages/SignupPage";
 import { ChatPage } from "./pages/ChatPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 
 function RootLayout() {
   return (
@@ -68,6 +69,7 @@ export const router = createBrowserRouter([
       { path: "login", Component: LoginPage },
       { path: "signup", Component: SignupPage },
       { path: "forgot-password", Component: ForgotPasswordPage },
+      { path: "reset-password", Component: ResetPasswordPage },
       { path: "*", Component: NotFound },
     ],
   },

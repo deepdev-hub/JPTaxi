@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router";
+import QRCode from "qrcode";
 import {
   MapPin, Clock, Phone, MessageCircle, Star, ThumbsUp, ThumbsDown,
   Share2, QrCode, ChevronLeft, ExternalLink, Camera, ArrowRight
@@ -23,6 +24,8 @@ export function RestaurantDetailPage() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [qrImageUrl, setQrImageUrl] = useState("");
+  const shareUrl = `http://localhost:5173/restaurant/${id ?? ""}`;
 
   useEffect(() => {
     if (!id) return;
@@ -47,6 +50,30 @@ export function RestaurantDetailPage() {
       mounted = false;
     };
   }, [id]);
+
+  useEffect(() => {
+    if (!showQR) return;
+
+    let mounted = true;
+    QRCode.toDataURL(shareUrl, {
+      width: 192,
+      margin: 2,
+      color: {
+        dark: "#111827",
+        light: "#ffffff",
+      },
+    })
+      .then((url) => {
+        if (mounted) setQrImageUrl(url);
+      })
+      .catch(() => {
+        if (mounted) setQrImageUrl("");
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [showQR, shareUrl]);
 
   if (loading) {
     return (
@@ -104,15 +131,23 @@ export function RestaurantDetailPage() {
     );
   };
 
-  const handleShare = () => {
-    const url = window.location.href;
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
+  const handleShare = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+    } catch {
+      const input = document.createElement("textarea");
+      input.value = shareUrl;
+      input.style.position = "fixed";
+      input.style.opacity = "0";
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      document.body.removeChild(input);
+    }
 
-  const shareUrl = `${window.location.origin}/restaurant/${id}`;
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const ratingDistribution = [5, 4, 3, 2, 1].map((star) => ({
     star,
@@ -172,19 +207,26 @@ export function RestaurantDetailPage() {
                   </span>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="relative flex gap-2">
                 <button
                   onClick={() => setShowQR(!showQR)}
+                  title={t.detail.qrTitle}
                   className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-white/30 transition-colors"
                 >
                   <QrCode className="w-5 h-5" />
                 </button>
                 <button
                   onClick={handleShare}
+                  title={t.detail.copy}
                   className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-white/30 transition-colors"
                 >
                   <Share2 className="w-5 h-5" />
                 </button>
+                {copied && (
+                  <span className="absolute right-0 top-full mt-2 whitespace-nowrap rounded-full bg-white px-3 py-1 text-xs text-blue-600 shadow-md">
+                    {t.detail.copied}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -196,32 +238,13 @@ export function RestaurantDetailPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowQR(false)}>
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-gray-900 text-center mb-4">{t.detail.qrTitle}</h3>
-            {/* QR Code placeholder */}
             <div className="flex justify-center mb-4">
-              <div className="w-48 h-48 border-2 border-gray-200 rounded-xl flex items-center justify-center bg-gray-50 relative overflow-hidden">
-                <svg viewBox="0 0 200 200" className="w-40 h-40">
-                  {/* QR code placeholder pattern */}
-                  {Array.from({ length: 10 }).map((_, row) =>
-                    Array.from({ length: 10 }).map((_, col) => {
-                      const isCorner =
-                        (row < 3 && col < 3) ||
-                        (row < 3 && col > 6) ||
-                        (row > 6 && col < 3);
-                      const filled = isCorner || Math.random() > 0.5;
-                      return filled ? (
-                        <rect
-                          key={`${row}-${col}`}
-                          x={col * 20}
-                          y={row * 20}
-                          width={18}
-                          height={18}
-                          fill="#1a1a1a"
-                          rx={1}
-                        />
-                      ) : null;
-                    })
-                  )}
-                </svg>
+              <div className="w-48 h-48 border-2 border-gray-200 rounded-xl flex items-center justify-center bg-white p-3">
+                {qrImageUrl ? (
+                  <img src={qrImageUrl} alt={shareUrl} className="w-full h-full object-contain" />
+                ) : (
+                  <QrCode className="w-16 h-16 text-gray-300" />
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-xl mb-3">

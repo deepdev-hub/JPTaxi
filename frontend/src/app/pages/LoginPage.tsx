@@ -150,7 +150,7 @@ export function LoginPage() {
               </div>
             </button>
           </div>
-          <p className="text-[10px] text-gray-400 text-center mt-3">{t.login.demoNote}</p>
+          <p className="text-[10px] text-gray-400 text-center mt-3">Demo password: demo1234</p>
         </div>
       </div>
     </div>
