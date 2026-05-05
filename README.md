@@ -548,13 +548,13 @@ git push origin feature/restaurant-search
 
 ## 16. Thành viên nhóm
 
-| STT | Họ tên       | Vai trò                  |
-| --- | ------------ | ------------------------ |
-| 1   | Thành viên 1 | Backend / Authentication |
-| 2   | Thành viên 2 | Frontend                 |
-| 3   | Thành viên 3 | Database                 |
-| 4   | Thành viên 4 | UI/UX                    |
-| 5   | Thành viên 5 | Testing / Documentation  |
+| STT | Họ tên        | Vai trò                  |
+| --- | ------------  | ------------------------ |
+| 1   | Lương Văn Hưng| Backend / Authentication |
+| 2   | Nguyễn Quang Thiện  | Frontend                 |
+| 3   | Đàm Vĩnh Hưng  | Database                 |
+| 4   | Trần Duy Hưng  | UI/UX                    |
+| 5   | Đào Nhật Hưng | Testing / Documentation  |
 
 ## 17. Định hướng phát triển trong tương lai
 
