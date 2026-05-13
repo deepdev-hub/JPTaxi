@@ -1,6 +1,6 @@
 package com.jptaxi.application.dto;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 public record ReviewDto(
@@ -11,7 +11,7 @@ public record ReviewDto(
         String userAvatar,
         Integer rating,
         String comment,
-        LocalDate date,
+        LocalDateTime date,
         List<String> images,
         Integer likes,
         Integer dislikes,

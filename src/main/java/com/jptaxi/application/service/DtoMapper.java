@@ -18,6 +18,7 @@ import com.jptaxi.application.entity.RestaurantImage;
 import com.jptaxi.application.entity.RestaurantTag;
 import com.jptaxi.application.entity.Review;
 import com.jptaxi.application.entity.ReviewImage;
+import com.jptaxi.application.entity.ReviewReactionType;
 import com.jptaxi.application.entity.User;
 
 @Component
@@ -75,6 +76,24 @@ public class DtoMapper {
     }
 
     public ReviewDto toReviewDto(Review review) {
+        return toReviewDto(review, null);
+    }
+
+    public ReviewDto toReviewDto(Review review, String currentUserId) {
+        boolean userLiked = false;
+        boolean userDisliked = false;
+
+        if (currentUserId != null && !currentUserId.isBlank()) {
+            userLiked = review.getReactions()
+                    .stream()
+                    .anyMatch(reaction -> currentUserId.equals(reaction.getUser().getId())
+                            && reaction.getReactionType() == ReviewReactionType.like);
+            userDisliked = review.getReactions()
+                    .stream()
+                    .anyMatch(reaction -> currentUserId.equals(reaction.getUser().getId())
+                            && reaction.getReactionType() == ReviewReactionType.dislike);
+        }
+
         return new ReviewDto(
                 review.getId(),
                 review.getRestaurant().getId(),
@@ -83,12 +102,12 @@ public class DtoMapper {
                 review.getUser().getAvatar(),
                 review.getRating(),
                 review.getComment(),
-                review.getCreatedAt().toLocalDate(),
+                review.getCreatedAt(),
                 review.getImages().stream().map(ReviewImage::getImageUrl).toList(),
                 review.getLikesCount(),
                 review.getDislikesCount(),
-                false,
-                false
+                userLiked,
+                userDisliked
         );
     }
 

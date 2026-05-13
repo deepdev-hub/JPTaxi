@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router";
 import { ChevronLeft, Upload, X, AlertCircle, CheckCircle, Star } from "lucide-react";
 import { createReview, getRestaurant } from "../api/client";
@@ -6,6 +6,15 @@ import type { Restaurant } from "../types";
 import { StarRating } from "../components/StarRating";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
+
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_REVIEW_IMAGES = 3;
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+interface SelectedReviewImage {
+  file: File;
+  previewUrl: string;
+}
 
 export function WriteReviewPage() {
   const { id } = useParams<{ id: string }>();
@@ -17,9 +26,12 @@ export function WriteReviewPage() {
   const [loadingRestaurant, setLoadingRestaurant] = useState(true);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
-  const [images, setImages] = useState<string[]>([]);
+  const [selectedImages, setSelectedImages] = useState<SelectedReviewImage[]>([]);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const selectedImagesRef = useRef<SelectedReviewImage[]>([]);
 
   useEffect(() => {
     if (!id) return;
@@ -42,6 +54,16 @@ export function WriteReviewPage() {
       mounted = false;
     };
   }, [id]);
+
+  useEffect(() => {
+    selectedImagesRef.current = selectedImages;
+  }, [selectedImages]);
+
+  useEffect(() => {
+    return () => {
+      selectedImagesRef.current.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+    };
+  }, []);
 
   if (!isLoggedIn) {
     return (
@@ -78,35 +100,81 @@ export function WriteReviewPage() {
     if (rating === 0) newErrors.rating = t.review.errorRating;
     if (!comment.trim()) newErrors.comment = t.review.errorComment;
     if (comment.trim().length < 20) newErrors.comment = t.review.errorCommentLength;
+    if (errors.images) newErrors.images = errors.images;
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validate() || !id || !currentUser) return;
-    await createReview({
-      restaurantId: id,
-      userId: currentUser.id,
-      rating,
-      comment,
-      images,
-    });
-    setSubmitted(true);
-    setTimeout(() => { navigate(`/restaurant/${id}`); }, 2000);
+    if (!validate() || !id || !currentUser || submitting) return;
+
+    setSubmitting(true);
+    try {
+      await createReview({
+        restaurantId: id,
+        userId: currentUser.id,
+        rating,
+        comment,
+        imageFiles: selectedImages.map((image) => image.file),
+      });
+      setSubmitted(true);
+      setTimeout(() => { navigate(`/restaurant/${id}`); }, 2000);
+    } catch (err) {
+      const message = err instanceof Error && err.message
+        ? err.message
+        : t.review.submitError;
+      setErrors((prev) => ({ ...prev, submit: message }));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const ratingColors = ["", "text-red-500", "text-orange-500", "text-yellow-500", "text-blue-500", "text-green-500"];
 
-  const sampleImages = [
-    "https://images.unsplash.com/photo-1677837914128-2367031a11e7?w=200&h=200&fit=crop",
-    "https://images.unsplash.com/photo-1656945843375-207bb6e47750?w=200&h=200&fit=crop",
-  ];
+  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
 
-  const addSampleImage = () => {
-    if (images.length < 4) {
-      setImages([...images, sampleImages[images.length % sampleImages.length]]);
+    if (files.length === 0) return;
+
+    if (selectedImages.length + files.length > MAX_REVIEW_IMAGES) {
+      setErrors((prev) => ({ ...prev, images: t.review.errorImageCount }));
+      return;
     }
+
+    const nextImages: SelectedReviewImage[] = [];
+
+    for (const file of files) {
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        setErrors((prev) => ({ ...prev, images: t.review.errorImageType }));
+        nextImages.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+        return;
+      }
+
+      if (file.size > MAX_IMAGE_SIZE_BYTES) {
+        setErrors((prev) => ({ ...prev, images: t.review.errorImageSize }));
+        nextImages.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+        return;
+      }
+
+      nextImages.push({
+        file,
+        previewUrl: URL.createObjectURL(file),
+      });
+    }
+
+    setSelectedImages((prev) => [...prev, ...nextImages]);
+    setErrors((prev) => ({ ...prev, images: "", submit: "" }));
+  };
+
+  const removeImage = (index: number) => {
+    setSelectedImages((prev) => {
+      const removedImage = prev[index];
+      if (removedImage) URL.revokeObjectURL(removedImage.previewUrl);
+      return prev.filter((_, currentIndex) => currentIndex !== index);
+    });
+    setErrors((prev) => ({ ...prev, images: "" }));
   };
 
   if (submitted) {
@@ -204,29 +272,43 @@ export function WriteReviewPage() {
             <h3 className="text-gray-900 mb-1">{t.review.imageTitle}</h3>
             <p className="text-sm text-gray-400 mb-4">{t.review.imageDesc}</p>
             <div className="flex flex-wrap gap-3">
-              {images.map((img, i) => (
+              {selectedImages.map((image, i) => (
                 <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden group">
-                  <img src={img} alt={`upload ${i}`} className="w-full h-full object-cover" />
+                  <img src={image.previewUrl} alt={image.file.name} className="w-full h-full object-cover" />
                   <button
                     type="button"
-                    onClick={() => setImages(images.filter((_, idx) => idx !== i))}
+                    onClick={() => removeImage(i)}
                     className="absolute top-1 right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     <X className="w-3 h-3 text-white" />
                   </button>
                 </div>
               ))}
-              {images.length < 4 && (
+              {selectedImages.length < MAX_REVIEW_IMAGES && (
                 <button
                   type="button"
-                  onClick={addSampleImage}
+                  onClick={() => fileInputRef.current?.click()}
                   className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-blue-300 hover:text-blue-400 transition-colors"
                 >
                   <Upload className="w-5 h-5" />
                   <span className="text-[10px]">{t.review.addImage}</span>
                 </button>
               )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                multiple
+                onChange={handleImageSelect}
+                className="hidden"
+              />
             </div>
+            {errors.images && (
+              <p className="text-xs text-red-500 mt-2 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                {errors.images}
+              </p>
+            )}
           </div>
 
           {/* Tips */}
@@ -239,13 +321,21 @@ export function WriteReviewPage() {
             </ul>
           </div>
 
+          {errors.submit && (
+            <p className="text-sm text-red-500 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              {errors.submit}
+            </p>
+          )}
+
           <button
             type="submit"
-            className="w-full flex items-center justify-center gap-2 py-3.5 text-white rounded-xl text-sm transition-all hover:opacity-90"
+            disabled={submitting}
+            className="w-full flex items-center justify-center gap-2 py-3.5 text-white rounded-xl text-sm transition-all hover:opacity-90 disabled:opacity-60"
             style={{ background: "linear-gradient(135deg, #0066CC 0%, #004499 100%)" }}
           >
             <Star className="w-4 h-4" />
-            {t.review.submitBtn}
+            {submitting ? t.review.submitting : t.review.submitBtn}
           </button>
         </form>
       </div>
