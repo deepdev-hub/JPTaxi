@@ -1,17 +1,18 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router";
 import QRCode from "qrcode";
 import {
   MapPin, Clock, Phone, MessageCircle, Star, ThumbsUp, ThumbsDown,
   Share2, QrCode, ChevronLeft, ExternalLink, Camera, ArrowRight
 } from "lucide-react";
-import { getRestaurant, getReviews } from "../api/client";
+import { getRestaurant, getReviews, reactToReview } from "../api/client";
 import type { Restaurant, Review } from "../types";
 import { StarRating } from "../components/StarRating";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 
 type TabType = "info" | "reviews";
+type ReviewSortMode = "score" | "newest" | "oldest";
 
 export function RestaurantDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -23,6 +24,9 @@ export function RestaurantDetailPage() {
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reviewStarFilter, setReviewStarFilter] = useState<number | "all">("all");
+  const [reviewSortMode, setReviewSortMode] = useState<ReviewSortMode>("score");
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [qrImageUrl, setQrImageUrl] = useState("");
   const shareUrl = `http://localhost:5173/restaurant/${id ?? ""}`;
@@ -33,7 +37,7 @@ export function RestaurantDetailPage() {
     let mounted = true;
     setLoading(true);
 
-    Promise.all([getRestaurant(id), getReviews(id)])
+    Promise.all([getRestaurant(id), getReviews(id, currentUser?.id)])
       .then(([restaurantData, reviewData]) => {
         if (!mounted) return;
         setRestaurant(restaurantData);
@@ -49,7 +53,7 @@ export function RestaurantDetailPage() {
     return () => {
       mounted = false;
     };
-  }, [id]);
+  }, [id, currentUser?.id]);
 
   useEffect(() => {
     if (!showQR) return;
@@ -74,6 +78,30 @@ export function RestaurantDetailPage() {
       mounted = false;
     };
   }, [showQR, shareUrl]);
+
+  const visibleReviews = useMemo(() => {
+    const currentUserId = currentUser?.id;
+
+    return reviews
+      .filter((review) => reviewStarFilter === "all" || Math.round(review.rating) === reviewStarFilter)
+      .slice()
+      .sort((a, b) => {
+        const aIsOwn = currentUserId ? a.userId === currentUserId : false;
+        const bIsOwn = currentUserId ? b.userId === currentUserId : false;
+
+        if (aIsOwn !== bIsOwn) return aIsOwn ? -1 : 1;
+
+        const aDate = new Date(a.date).getTime();
+        const bDate = new Date(b.date).getTime();
+
+        if (reviewSortMode === "newest") return bDate - aDate;
+        if (reviewSortMode === "oldest") return aDate - bDate;
+
+        const scoreDiff = b.likes - b.dislikes - (a.likes - a.dislikes);
+        if (scoreDiff !== 0) return scoreDiff;
+        return bDate - aDate;
+      });
+  }, [currentUser?.id, reviewSortMode, reviewStarFilter, reviews]);
 
   if (loading) {
     return (
@@ -105,31 +133,33 @@ export function RestaurantDetailPage() {
       ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
       : restaurant.rating;
 
-  const handleLike = (reviewId: string) => {
-    if (!isLoggedIn) { navigate("/login"); return; }
-    setReviews((prev) =>
-      prev.map((r) =>
-        r.id === reviewId
-          ? r.userLiked
-            ? { ...r, likes: r.likes - 1, userLiked: false }
-            : { ...r, likes: r.likes + 1, userLiked: true, userDisliked: false, dislikes: r.userDisliked ? r.dislikes - 1 : r.dislikes }
-          : r
-      )
-    );
+  const handleReaction = async (reviewId: string, reactionType: "like" | "dislike") => {
+    if (!isLoggedIn || !currentUser) { navigate("/login"); return; }
+
+    setReviewError(null);
+
+    try {
+      const updatedReview = await reactToReview(reviewId, {
+        userId: currentUser.id,
+        reactionType,
+      });
+
+      setReviews((prev) =>
+        prev.map((review) => (review.id === reviewId ? updatedReview : review))
+      );
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : "Cannot update review reaction");
+    }
   };
 
-  const handleDislike = (reviewId: string) => {
-    if (!isLoggedIn) { navigate("/login"); return; }
-    setReviews((prev) =>
-      prev.map((r) =>
-        r.id === reviewId
-          ? r.userDisliked
-            ? { ...r, dislikes: r.dislikes - 1, userDisliked: false }
-            : { ...r, dislikes: r.dislikes + 1, userDisliked: true, userLiked: false, likes: r.userLiked ? r.likes - 1 : r.likes }
-          : r
-      )
-    );
-  };
+  const formatReviewDate = (date: string) =>
+    new Date(date).toLocaleString("ja-JP", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
   const handleShare = async () => {
     try {
@@ -287,7 +317,7 @@ export function RestaurantDetailPage() {
 
             {isLoggedIn ? (
               <Link
-                to="/chat"
+                to={`/chat?restaurantId=${restaurant.id}`}
                 className="flex items-center gap-2 px-4 py-2.5 text-sm text-blue-600 border border-blue-200 rounded-xl hover:bg-blue-50 transition-colors"
               >
                 <MessageCircle className="w-4 h-4" />
@@ -503,6 +533,59 @@ export function RestaurantDetailPage() {
               </Link>
             )}
 
+            {/* Filters and sorting */}
+            <div className="bg-white rounded-2xl p-4 border border-gray-100 space-y-4">
+              <div>
+                <p className="text-xs text-gray-500 mb-2">{t.detail.filterRating}</p>
+                <div className="flex flex-wrap gap-2">
+                  {(["all", 5, 4, 3, 2, 1] as const).map((option) => {
+                    const isActive = reviewStarFilter === option;
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => setReviewStarFilter(option)}
+                        className={`px-3 py-1.5 rounded-lg border text-xs transition-all ${
+                          isActive
+                            ? "border-blue-600 bg-blue-50 text-blue-600"
+                            : "border-gray-200 text-gray-600 hover:border-blue-200"
+                        }`}
+                      >
+                        {option === "all" ? t.detail.allStars : `${option} sao`}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-2">{t.detail.sortReviews}</p>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    ["score", t.detail.sortHelpful],
+                    ["newest", t.detail.sortNewest],
+                    ["oldest", t.detail.sortOldest],
+                  ] as const).map(([mode, label]) => {
+                    const isActive = reviewSortMode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setReviewSortMode(mode)}
+                        className={`px-3 py-1.5 rounded-lg border text-xs transition-all ${
+                          isActive
+                            ? "border-blue-600 bg-blue-50 text-blue-600"
+                            : "border-gray-200 text-gray-600 hover:border-blue-200"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {reviewError && <p className="text-xs text-red-500">{reviewError}</p>}
+            </div>
+
             {/* Review list */}
             {reviews.length === 0 ? (
               <div className="text-center py-12">
@@ -510,9 +593,13 @@ export function RestaurantDetailPage() {
                 <p className="text-gray-500">{t.detail.noReviews}</p>
                 <p className="text-sm text-gray-400 mt-1">{t.detail.noReviewsFirst}</p>
               </div>
+            ) : visibleReviews.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-gray-500">{t.detail.noMatchingReviews}</p>
+              </div>
             ) : (
               <div className="space-y-4">
-                {reviews.map((review) => (
+                {visibleReviews.map((review) => (
                   <div key={review.id} className="bg-white rounded-2xl p-6 border border-gray-100">
                     <div className="flex items-start gap-3 mb-3">
                       <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
@@ -526,8 +613,15 @@ export function RestaurantDetailPage() {
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm text-gray-900">{review.userName}</p>
-                          <p className="text-xs text-gray-400">{review.date}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm text-gray-900">{review.userName}</p>
+                            {currentUser?.id === review.userId && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                                {t.detail.yourReview}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-400">{formatReviewDate(review.date)}</p>
                         </div>
                         <StarRating rating={review.rating} size="sm" />
                       </div>
@@ -549,7 +643,7 @@ export function RestaurantDetailPage() {
                     <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-50">
                       <p className="text-xs text-gray-400 flex-1">{t.detail.helpfulQuestion}</p>
                       <button
-                        onClick={() => handleLike(review.id)}
+                        onClick={() => handleReaction(review.id, "like")}
                         className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg transition-all ${
                           review.userLiked
                             ? "bg-green-100 text-green-700"
@@ -560,7 +654,7 @@ export function RestaurantDetailPage() {
                         <span>{review.likes}</span>
                       </button>
                       <button
-                        onClick={() => handleDislike(review.id)}
+                        onClick={() => handleReaction(review.id, "dislike")}
                         className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg transition-all ${
                           review.userDisliked
                             ? "bg-red-100 text-red-600"

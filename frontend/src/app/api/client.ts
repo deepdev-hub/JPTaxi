@@ -23,6 +23,36 @@ export interface SaveRestaurantPayload {
   lng?: number;
 }
 
+async function parseResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    let message = `API request failed: ${response.status} ${response.statusText}`;
+
+    try {
+      const errorText = await response.text();
+      if (errorText) {
+        try {
+          const errorBody = JSON.parse(errorText);
+          if (errorBody?.message) message = errorBody.message;
+          else if (errorBody?.error) message = errorBody.error;
+          else message = errorText;
+        } catch {
+          message = errorText;
+        }
+      }
+    } catch {
+      // Keep the HTTP status message when the backend does not return JSON.
+    }
+
+    throw new Error(message);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return response.json() as Promise<T>;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
@@ -32,11 +62,16 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
   });
 
-  if (!response.ok) {
-    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
-  }
+  return parseResponse<T>(response);
+}
 
-  return response.json() as Promise<T>;
+async function requestForm<T>(path: string, formData: FormData): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    body: formData,
+  });
+
+  return parseResponse<T>(response);
 }
 
 export function getRestaurants(ownerId?: string) {
@@ -66,8 +101,11 @@ export function updateRestaurant(id: string, data: SaveRestaurantPayload) {
   });
 }
 
-export function getReviews(restaurantId?: string) {
-  const query = restaurantId ? `?restaurantId=${encodeURIComponent(restaurantId)}` : "";
+export function getReviews(restaurantId?: string, userId?: string) {
+  const params = new URLSearchParams();
+  if (restaurantId) params.set("restaurantId", restaurantId);
+  if (userId) params.set("userId", userId);
+  const query = params.toString() ? `?${params.toString()}` : "";
   return request<Review[]>(`/reviews${query}`);
 }
 
@@ -76,9 +114,33 @@ export function createReview(data: {
   userId: string;
   rating: number;
   comment: string;
-  images: string[];
+  images?: string[];
+  imageFiles?: File[];
 }) {
+  if (data.imageFiles && data.imageFiles.length > 0) {
+    const formData = new FormData();
+    formData.append("restaurantId", data.restaurantId);
+    formData.append("userId", data.userId);
+    formData.append("rating", String(data.rating));
+    formData.append("comment", data.comment);
+    data.imageFiles.forEach((file) => formData.append("images", file));
+    return requestForm<Review>("/reviews", formData);
+  }
+
   return request<Review>("/reviews", {
+    method: "POST",
+    body: JSON.stringify({
+      restaurantId: data.restaurantId,
+      userId: data.userId,
+      rating: data.rating,
+      comment: data.comment,
+      images: data.images ?? [],
+    }),
+  });
+}
+
+export function reactToReview(reviewId: string, data: { userId: string; reactionType: "like" | "dislike" }) {
+  return request<Review>(`/reviews/${encodeURIComponent(reviewId)}/reaction`, {
     method: "POST",
     body: JSON.stringify(data),
   });
@@ -136,11 +198,25 @@ export function getConversations(userId: string) {
   return request<Conversation[]>(`/conversations?userId=${encodeURIComponent(userId)}`);
 }
 
-export function getMessages(userId: string) {
-  return request<Message[]>(`/messages?userId=${encodeURIComponent(userId)}`);
+export function createConversation(data: {
+  userId: string;
+  receiverId?: string;
+  restaurantId?: string;
+}) {
+  return request<Conversation>("/conversations", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function getMessages(userId: string, conversationId?: string) {
+  const params = new URLSearchParams({ userId });
+  if (conversationId) params.set("conversationId", conversationId);
+  return request<Message[]>(`/messages?${params.toString()}`);
 }
 
 export function createMessage(data: {
+  conversationId?: string;
   senderId: string;
   receiverId: string;
   restaurantId?: string;

@@ -1,6 +1,7 @@
 package com.jptaxi.application.repository;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -11,4 +12,6 @@ public interface ReviewRepository extends JpaRepository<Review, String> {
     List<Review> findByRestaurant_IdOrderByCreatedAtDesc(String restaurantId);
 
     List<Review> findByUser_IdOrderByCreatedAtDesc(String userId);
+
+    Optional<Review> findByRestaurant_IdAndUser_Id(String restaurantId, String userId);
 }
