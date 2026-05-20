@@ -43,10 +43,17 @@ export function SignupPage() {
     }
     setLoading(true);
     await new Promise((r) => setTimeout(r, 800));
-    const success = await signup(formData.email, formData.password, formData.name, formData.role);
+    const result = await signup(formData.email, formData.password, formData.name, formData.role);
     setLoading(false);
-    if (success) {
-      navigate("/");
+    if (result.success) {
+      alert(t.signup.successAlert);
+      navigate("/login");
+    } else {
+      if (result.error && result.error.includes("Email already exists")) {
+        setError(t.signup.errorEmailExists);
+      } else {
+        setError(result.error || "Signup failed");
+      }
     }
   };
 

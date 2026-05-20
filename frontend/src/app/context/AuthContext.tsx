@@ -7,7 +7,7 @@ interface AuthContextType {
   isLoggedIn: boolean;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
-  signup: (email: string, password: string, name: string, role: "diner" | "owner") => Promise<boolean>;
+  signup: (email: string, password: string, name: string, role: "diner" | "owner") => Promise<{ success: boolean; error?: string }>;
   updateProfile: (data: Partial<User>) => Promise<boolean>;
 }
 
@@ -32,15 +32,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCurrentUser(null);
   };
 
-  const signup = async (email: string, password: string, name: string, role: "diner" | "owner"): Promise<boolean> => {
-    if (!email || !password || !name) return false;
+  const signup = async (email: string, password: string, name: string, role: "diner" | "owner"): Promise<{ success: boolean; error?: string }> => {
+    if (!email || !password || !name) return { success: false, error: "Missing required fields" };
 
     try {
       const newUser = await createUser({ name, email, password, role });
       setCurrentUser(newUser);
-      return true;
-    } catch {
-      return false;
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || "Failed to create account" };
     }
   };
 

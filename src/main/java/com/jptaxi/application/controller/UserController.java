@@ -135,6 +135,12 @@ public class UserController {
     @PostMapping
     @Transactional
     public UserDto createUser(@RequestBody CreateUserRequest request) {
+        if (request.email() != null && userRepository.findByEmailIgnoreCase(request.email().trim()).isPresent()) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.BAD_REQUEST, "Email already exists"
+            );
+        }
+
         User user = new User();
         user.setId("u-" + UUID.randomUUID());
         user.setName(request.name());

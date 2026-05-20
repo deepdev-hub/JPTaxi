@@ -200,6 +200,8 @@ const translations = {
       errorEmailInvalid: "有効なメールアドレスを入力してください",
       errorPasswordShort: "パスワードは6文字以上で入力してください",
       errorPasswordMismatch: "パスワードが一致しません",
+      errorEmailExists: "このメールアドレスはすでに登録されています",
+      successAlert: "アカウントが作成されました！ログイン画面に移動します...",
     },
     // Chat
     chat: {
@@ -506,6 +508,8 @@ const translations = {
       errorEmailInvalid: "Email không hợp lệ",
       errorPasswordShort: "Mật khẩu phải có ít nhất 6 ký tự",
       errorPasswordMismatch: "Mật khẩu không khớp",
+      errorEmailExists: "Email này đã tồn tại, vui lòng nhập lại",
+      successAlert: "Đăng ký thành công! Đang chuyển hướng đến trang đăng nhập...",
     },
     // Chat
     chat: {
