@@ -1,6 +1,8 @@
 package com.jptaxi.application.service;
 
 import java.util.List;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 import org.springframework.stereotype.Component;
 
@@ -20,9 +22,16 @@ import com.jptaxi.application.entity.Review;
 import com.jptaxi.application.entity.ReviewImage;
 import com.jptaxi.application.entity.ReviewReactionType;
 import com.jptaxi.application.entity.User;
+import com.jptaxi.application.repository.ReviewRepository;
 
 @Component
 public class DtoMapper {
+
+    private final ReviewRepository reviewRepository;
+
+    public DtoMapper(ReviewRepository reviewRepository) {
+        this.reviewRepository = reviewRepository;
+    }
 
     public UserDto toUserDto(User user) {
         return new UserDto(
@@ -38,6 +47,17 @@ public class DtoMapper {
     }
 
     public RestaurantDto toRestaurantDto(Restaurant restaurant) {
+        List<Review> reviews = reviewRepository.findByRestaurant_IdOrderByCreatedAtDesc(restaurant.getId());
+        
+        int reviewCount = reviews.size();
+        BigDecimal rating = reviews.isEmpty()
+                ? restaurant.getRating()
+                : BigDecimal.valueOf(reviews.stream()
+                        .mapToDouble(Review::getRating)
+                        .average()
+                        .orElse(0.0))
+                .setScale(1, RoundingMode.HALF_UP);
+
         return new RestaurantDto(
                 restaurant.getId(),
                 restaurant.getOwner().getId(),
@@ -55,8 +75,8 @@ public class DtoMapper {
                 restaurant.getPriceRange(),
                 restaurant.getAvgPrice(),
                 restaurant.getTags().stream().map(RestaurantTag::getTagName).toList(),
-                restaurant.getRating(),
-                restaurant.getReviewCount(),
+                rating,
+                reviewCount,
                 null,
                 restaurant.getStatus(),
                 restaurant.getLat(),
@@ -102,7 +122,7 @@ public class DtoMapper {
                 review.getUser().getAvatar(),
                 review.getRating(),
                 review.getComment(),
-                review.getCreatedAt(),
+                review.getUpdatedAt(),
                 review.getImages().stream().map(ReviewImage::getImageUrl).toList(),
                 review.getLikesCount(),
                 review.getDislikesCount(),

@@ -1,19 +1,78 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router";
 import { Search, MapPin, Clock, Star, ChevronRight, Sparkles, Navigation } from "lucide-react";
+import { divIcon, type LatLngBoundsExpression } from "leaflet";
+import { MapContainer, Marker, TileLayer, useMap, Popup } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
 import { getRestaurants } from "../api/client";
 import { RestaurantCard } from "../components/RestaurantCard";
 import { useAuth } from "../context/AuthContext";
 import { useApiData } from "../hooks/useApiData";
 import { useLanguage } from "../context/LanguageContext";
+import type { Restaurant } from "../types";
+import { calculateDistance } from "../utils/distance";
+
+const HANOI_CENTER: [number, number] = [21.033, 105.848];
+
+function restaurantMarkerIcon(isSelected: boolean) {
+  return divIcon({
+    className: "restaurant-map-marker-shell",
+    html: `<span class="restaurant-map-marker${isSelected ? " restaurant-map-marker--selected" : ""}"><span></span></span>`,
+    iconSize: isSelected ? [42, 52] : [34, 44],
+    iconAnchor: isSelected ? [21, 52] : [17, 44],
+    popupAnchor: [0, -44],
+  });
+}
+
+function userMarkerIcon() {
+  return divIcon({
+    className: "user-map-marker-shell",
+    html: `<span class="user-map-marker"></span>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -12],
+  });
+}
+
+function MapAutoFit({ restaurants }: { restaurants: Restaurant[] }) {
+  const map = useMap();
+
+  React.useEffect(() => {
+    if (restaurants.length === 1) {
+      map.setView([Number(restaurants[0].lat), Number(restaurants[0].lng)], 15, { animate: true });
+      return;
+    }
+
+    if (restaurants.length > 1) {
+      const bounds = restaurants.map((restaurant) => [
+        Number(restaurant.lat),
+        Number(restaurant.lng),
+      ]) as LatLngBoundsExpression;
+      map.fitBounds(bounds, { padding: [44, 44], maxZoom: 15 });
+      return;
+    }
+
+    map.setView(HANOI_CENTER, 13, { animate: true });
+  }, [map, restaurants]);
+
+  return null;
+}
 
 export function HomePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const navigate = useNavigate();
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, userLocation } = useAuth();
   const { t } = useLanguage();
-  const { data: restaurants } = useApiData(getRestaurants, [], []);
+  const { data: rawRestaurants } = useApiData(getRestaurants, [], []);
+
+  const restaurants = React.useMemo(() => {
+    if (!userLocation) return rawRestaurants;
+    return rawRestaurants.map((r) => ({
+      ...r,
+      distance: calculateDistance(userLocation.lat, userLocation.lng, r.lat, r.lng)
+    }));
+  }, [rawRestaurants, userLocation]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,6 +86,16 @@ export function HomePage() {
 
   const featuredRestaurants = restaurants.filter((r) => r.rating >= 4.5).slice(0, 3);
   const nearbyRestaurants = [...restaurants].sort((a, b) => (a.distance || 0) - (b.distance || 0)).slice(0, 3);
+
+  const restaurantsWithCoords = React.useMemo(
+    () =>
+      restaurants.filter((restaurant) => {
+        const lat = Number(restaurant.lat);
+        const lng = Number(restaurant.lng);
+        return Number.isFinite(lat) && Number.isFinite(lng);
+      }),
+    [restaurants]
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -149,80 +218,48 @@ export function HomePage() {
                   {t.home.viewAll} <ChevronRight className="w-4 h-4" />
                 </Link>
               </div>
-              {/* Map placeholder */}
-              <div className="relative h-64 bg-gradient-to-br from-blue-50 to-indigo-50 overflow-hidden">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="relative w-full h-full">
-                    {/* Grid lines simulating map */}
-                    <svg className="absolute inset-0 w-full h-full opacity-20" xmlns="http://www.w3.org/2000/svg">
-                      <defs>
-                        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#3B82F6" strokeWidth="0.5"/>
-                        </pattern>
-                      </defs>
-                      <rect width="100%" height="100%" fill="url(#grid)" />
-                    </svg>
+              {/* Map */}
+              <div className="relative h-64 bg-gray-100 z-0">
+                <MapContainer
+                  center={HANOI_CENTER}
+                  zoom={13}
+                  scrollWheelZoom={false}
+                  className="h-full w-full z-0"
+                >
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  <MapAutoFit restaurants={restaurantsWithCoords.slice(0, 4)} />
 
-                    {/* Road lines */}
-                    <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg">
-                      <line x1="20%" y1="0" x2="20%" y2="100%" stroke="#CBD5E1" strokeWidth="8" />
-                      <line x1="50%" y1="0" x2="50%" y2="100%" stroke="#CBD5E1" strokeWidth="12" />
-                      <line x1="80%" y1="0" x2="80%" y2="100%" stroke="#CBD5E1" strokeWidth="6" />
-                      <line x1="0" y1="30%" x2="100%" y2="30%" stroke="#CBD5E1" strokeWidth="10" />
-                      <line x1="0" y1="60%" x2="100%" y2="60%" stroke="#CBD5E1" strokeWidth="8" />
-                      <rect x="25%" y="10%" width="20%" height="18%" rx="4" fill="#E2E8F0" />
-                      <rect x="55%" y="35%" width="22%" height="22%" rx="4" fill="#E2E8F0" />
-                      <rect x="5%" y="40%" width="12%" height="16%" rx="4" fill="#E2E8F0" />
-                    </svg>
+                  {userLocation && (
+                    <Marker
+                      position={[userLocation.lat, userLocation.lng]}
+                      icon={userMarkerIcon()}
+                    >
+                      <Popup minWidth={100} closeButton={false}>
+                        <div className="text-sm font-semibold text-center text-blue-600">Vị trí của bạn</div>
+                      </Popup>
+                    </Marker>
+                  )}
 
-                    {/* Restaurant pins */}
-                    {restaurants.slice(0, 4).map((r, i) => {
-                      const positions = [
-                        { left: "25%", top: "25%" },
-                        { left: "55%", top: "45%" },
-                        { left: "40%", top: "65%" },
-                        { left: "70%", top: "20%" },
-                      ];
-                      return (
-                        <Link
-                          key={r.id}
-                          to={`/restaurant/${r.id}`}
-                          className="absolute -translate-x-1/2 -translate-y-full group"
-                          style={positions[i]}
-                        >
-                          <div className="relative">
-                            <div
-                              className="w-8 h-8 rounded-full border-2 border-white shadow-lg flex items-center justify-center text-white text-xs transition-transform group-hover:scale-110"
-                              style={{ background: "linear-gradient(135deg, #0066CC 0%, #004499 100%)" }}
-                            >
-                              {i + 1}
-                            </div>
-                            <div className="absolute left-1/2 top-full -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-blue-600" />
-                          </div>
-                          <div className="absolute left-1/2 bottom-full mb-2 -translate-x-1/2 bg-white rounded-lg shadow-lg p-2 w-36 opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
-                            <p className="text-xs text-gray-900 truncate">{r.nameJp}</p>
-                            <div className="flex items-center gap-1 mt-0.5">
-                              <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                              <span className="text-xs text-gray-500">{r.rating}</span>
-                            </div>
-                          </div>
-                        </Link>
-                      );
-                    })}
-
-                    {/* Current location */}
-                    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-                      <div className="w-5 h-5 rounded-full bg-blue-500 border-2 border-white shadow-md">
-                        <div className="w-2 h-2 rounded-full bg-white absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
-                      </div>
-                      <div className="w-12 h-12 rounded-full bg-blue-200 opacity-30 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-ping" />
-                    </div>
-                  </div>
-                </div>
+                  {restaurantsWithCoords.slice(0, 4).map((restaurant) => {
+                    return (
+                      <Marker
+                        key={restaurant.id}
+                        position={[Number(restaurant.lat), Number(restaurant.lng)]}
+                        icon={restaurantMarkerIcon(false)}
+                        eventHandlers={{
+                          click: () => navigate(`/restaurant/${restaurant.id}`),
+                        }}
+                      />
+                    );
+                  })}
+                </MapContainer>
 
                 <Link
                   to="/search"
-                  className="absolute bottom-4 right-4 flex items-center gap-2 px-3 py-2 bg-white rounded-xl shadow-md text-sm text-blue-600 hover:bg-blue-50 transition-colors"
+                  className="absolute bottom-4 right-4 flex items-center gap-2 px-3 py-2 bg-white rounded-xl shadow-md text-sm text-blue-600 hover:bg-blue-50 transition-colors z-[400]"
                 >
                   <Navigation className="w-4 h-4" />
                   {t.home.viewMap}

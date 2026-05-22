@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams, Link } from "react-router";
 import { Search, SlidersHorizontal, Star, X, Navigation } from "lucide-react";
 import { divIcon, type LatLngBoundsExpression } from "leaflet";
@@ -9,7 +9,9 @@ import { RestaurantCard } from "../components/RestaurantCard";
 import { StarRating } from "../components/StarRating";
 import { useApiData } from "../hooks/useApiData";
 import { useLanguage } from "../context/LanguageContext";
+import { useAuth } from "../context/AuthContext";
 import type { Restaurant } from "../types";
+import { calculateDistance } from "../utils/distance";
 
 const HANOI_CENTER: [number, number] = [21.033, 105.848];
 const RESTAURANT_PLACEHOLDER =
@@ -22,6 +24,16 @@ function restaurantMarkerIcon(isSelected: boolean) {
     iconSize: isSelected ? [42, 52] : [34, 44],
     iconAnchor: isSelected ? [21, 52] : [17, 44],
     popupAnchor: [0, -44],
+  });
+}
+
+function userMarkerIcon() {
+  return divIcon({
+    className: "user-map-marker-shell",
+    html: `<span class="user-map-marker"></span>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -12],
   });
 }
 
@@ -62,9 +74,66 @@ function MapAutoFit({
   return null;
 }
 
+function RestaurantMarker({
+  restaurant,
+  isSelected,
+  onClick,
+  t,
+}: {
+  restaurant: Restaurant;
+  isSelected: boolean;
+  onClick: () => void;
+  t: any;
+}) {
+  const markerRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (isSelected && markerRef.current) {
+      markerRef.current.openPopup();
+    }
+  }, [isSelected]);
+
+  const rating = Number(restaurant.rating);
+
+  return (
+    <Marker
+      position={[Number(restaurant.lat), Number(restaurant.lng)]}
+      icon={restaurantMarkerIcon(isSelected)}
+      eventHandlers={{ click: onClick }}
+      ref={markerRef}
+    >
+      <Popup minWidth={240} closeButton={false}>
+        <div className="restaurant-map-popup">
+          <img
+            src={restaurant.coverImage || RESTAURANT_PLACEHOLDER}
+            alt={restaurant.nameVn}
+            onError={(event) => {
+              event.currentTarget.src = RESTAURANT_PLACEHOLDER;
+            }}
+          />
+          <div className="restaurant-map-popup__body">
+            <p className="restaurant-map-popup__title">{restaurant.nameJp || restaurant.nameVn}</p>
+            <p className="restaurant-map-popup__address">{restaurant.address}</p>
+            <div className="restaurant-map-popup__footer">
+              <span className="restaurant-map-popup__rating">
+                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                {Number.isFinite(rating) && rating > 0 ? rating.toFixed(1) : "Chưa có đánh giá"}
+              </span>
+              <Link to={`/restaurant/${restaurant.id}`}>
+                {t.search.detailLink}
+              </Link>
+            </div>
+          </div>
+        </div>
+      </Popup>
+    </Marker>
+  );
+}
+
 export function SearchResultsPage() {
   const [searchParams] = useSearchParams();
   const { t } = useLanguage();
+  const { userLocation } = useAuth();
   const query = searchParams.get("q") || "";
   const filterParam = searchParams.get("filter") || "";
   const tagParam = searchParams.get("tag") || "";
@@ -85,19 +154,28 @@ export function SearchResultsPage() {
 
   const [searchQuery, setSearchQuery] = useState(query);
   const [selectedTags, setSelectedTags] = useState<string[]>(tagParam ? [tagParam] : []);
-  const [selectedPriceRange, setSelectedPriceRange] = useState<number | null>(null);
+  const [selectedPriceRange, setSelectedPriceRange] = useState<number | null>(filterParam === "cheap" ? 1 : null);
   const [selectedDistance, setSelectedDistance] = useState<number | null>(null);
   const [openOnly, setOpenOnly] = useState(filterParam === "open");
   const [minRating, setMinRating] = useState(0);
   const [selectedRestaurant, setSelectedRestaurant] = useState<string | null>(null);
+  const [hasAutoSelected, setHasAutoSelected] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "map">("map");
   const {
-    data: restaurants,
+    data: rawRestaurants,
     loading: loadingRestaurants,
     error: restaurantError,
   } = useApiData(getRestaurants, [], []);
   const { data: foodTags } = useApiData(getFoodTags, [], []);
+
+  const restaurants = useMemo(() => {
+    if (!userLocation) return rawRestaurants;
+    return rawRestaurants.map((r) => ({
+      ...r,
+      distance: calculateDistance(userLocation.lat, userLocation.lng, r.lat, r.lng)
+    }));
+  }, [rawRestaurants, userLocation]);
 
   const filteredRestaurants = useMemo(() => {
     let results = [...restaurants];
@@ -141,11 +219,17 @@ export function SearchResultsPage() {
     }
 
     if (filterParam === "near") {
-      results.sort((a, b) => (a.distance || 0) - (b.distance || 0));
+      results.sort((a, b) => {
+        const distA = a.distance ?? Number.MAX_VALUE;
+        const distB = b.distance ?? Number.MAX_VALUE;
+        return distA - distB;
+      });
     }
 
-    if (filterParam === "cheap") {
-      results.sort((a, b) => a.avgPrice - b.avgPrice);
+    if (filterParam === "popular" && results.length > 0) {
+      const maxRating = Math.max(...results.map((r) => r.rating));
+      results = results.filter((r) => r.rating === maxRating);
+      results.sort((a, b) => (b.reviewCount || 0) - (a.reviewCount || 0));
     }
 
     return results;
@@ -160,6 +244,18 @@ export function SearchResultsPage() {
       }),
     [filteredRestaurants]
   );
+
+  // Auto-select top restaurant for "near" and "popular" filters
+  useEffect(() => {
+    if (filterParam === "near" || filterParam === "popular") {
+      if (restaurantsWithCoords.length > 0 && !hasAutoSelected) {
+        setSelectedRestaurant(restaurantsWithCoords[0].id);
+        setHasAutoSelected(true);
+      }
+    } else {
+      setHasAutoSelected(false);
+    }
+  }, [filterParam, restaurantsWithCoords, hasAutoSelected]);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) =>
@@ -446,46 +542,26 @@ export function SearchResultsPage() {
                     />
                     <MapAutoFit restaurants={restaurantsWithCoords} selectedRestaurantId={selectedRestaurant} />
 
-                    {restaurantsWithCoords.map((restaurant) => {
-                      const isSelected = selectedRestaurant === restaurant.id;
-                      const rating = Number(restaurant.rating);
+                    {userLocation && (
+                      <Marker
+                        position={[userLocation.lat, userLocation.lng]}
+                        icon={userMarkerIcon()}
+                      >
+                        <Popup minWidth={100} closeButton={false}>
+                          <div className="text-sm font-semibold text-center text-blue-600">Vị trí của bạn</div>
+                        </Popup>
+                      </Marker>
+                    )}
 
-                      return (
-                        <Marker
-                          key={restaurant.id}
-                          position={[Number(restaurant.lat), Number(restaurant.lng)]}
-                          icon={restaurantMarkerIcon(isSelected)}
-                          eventHandlers={{
-                            click: () => setSelectedRestaurant(restaurant.id),
-                          }}
-                        >
-                          <Popup minWidth={240} closeButton={false}>
-                            <div className="restaurant-map-popup">
-                              <img
-                                src={restaurant.coverImage || RESTAURANT_PLACEHOLDER}
-                                alt={restaurant.nameVn}
-                                onError={(event) => {
-                                  event.currentTarget.src = RESTAURANT_PLACEHOLDER;
-                                }}
-                              />
-                              <div className="restaurant-map-popup__body">
-                                <p className="restaurant-map-popup__title">{restaurant.nameJp || restaurant.nameVn}</p>
-                                <p className="restaurant-map-popup__address">{restaurant.address}</p>
-                                <div className="restaurant-map-popup__footer">
-                                  <span className="restaurant-map-popup__rating">
-                                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                                    {Number.isFinite(rating) && rating > 0 ? rating.toFixed(1) : "Chưa có đánh giá"}
-                                  </span>
-                                  <Link to={`/restaurant/${restaurant.id}`}>
-                                    {t.search.detailLink}
-                                  </Link>
-                                </div>
-                              </div>
-                            </div>
-                          </Popup>
-                        </Marker>
-                      );
-                    })}
+                    {restaurantsWithCoords.map((restaurant) => (
+                      <RestaurantMarker
+                        key={restaurant.id}
+                        restaurant={restaurant}
+                        isSelected={selectedRestaurant === restaurant.id}
+                        onClick={() => setSelectedRestaurant(restaurant.id)}
+                        t={t}
+                      />
+                    ))}
                   </MapContainer>
                 )}
 

@@ -347,7 +347,7 @@ export function RestaurantDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="bg-white border-b border-gray-100 sticky top-[8.5rem] z-10">
+      <div className="bg-white border-b border-gray-100">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex gap-6">
             {(["info", "reviews"] as const).map((tab) => {
