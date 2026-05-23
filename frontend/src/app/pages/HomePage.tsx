@@ -368,14 +368,6 @@ export function HomePage() {
               <p className="text-sm leading-relaxed">{t.home.footerDesc}</p>
             </div>
             <div>
-              <h4 className="text-white text-sm mb-4">{t.home.footerMenu}</h4>
-              <ul className="space-y-2 text-sm">
-                <li><Link to="/search" className="hover:text-white transition-colors">{t.home.footerSearch}</Link></li>
-                <li><Link to="/login" className="hover:text-white transition-colors">{t.home.footerLogin}</Link></li>
-                <li><Link to="/signup" className="hover:text-white transition-colors">{t.home.footerSignup}</Link></li>
-              </ul>
-            </div>
-            <div>
               <h4 className="text-white text-sm mb-4">{t.home.footerContact}</h4>
               <p className="text-sm">support@chikaimise.vn</p>
               <p className="text-sm mt-1">{t.home.footerCity}</p>

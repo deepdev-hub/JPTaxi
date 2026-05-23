@@ -1,10 +1,22 @@
 package com.jptaxi.application.controller;
 
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.net.MalformedURLException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +27,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import com.jptaxi.application.dto.MenuItemDto;
 import com.jptaxi.application.dto.RestaurantDto;
@@ -34,21 +48,28 @@ import com.jptaxi.application.service.DtoMapper;
 @RequestMapping("/api/restaurants")
 public class RestaurantController {
 
+    private static final long MAX_IMAGE_SIZE_BYTES = 10L * 1024L * 1024L;
+    private static final int MAX_RESTAURANT_IMAGES = 8;
+    private static final List<String> ALLOWED_IMAGE_TYPES = List.of("image/jpeg", "image/png", "image/webp");
+
     private final RestaurantRepository restaurantRepository;
     private final RestaurantTagRepository restaurantTagRepository;
     private final UserRepository userRepository;
     private final DtoMapper mapper;
+    private final Path restaurantUploadRoot;
 
     public RestaurantController(
             RestaurantRepository restaurantRepository,
             RestaurantTagRepository restaurantTagRepository,
             UserRepository userRepository,
-            DtoMapper mapper
+            DtoMapper mapper,
+            @Value("${app.upload.restaurant-dir:uploads/restaurants}") String restaurantUploadDir
     ) {
         this.restaurantRepository = restaurantRepository;
         this.restaurantTagRepository = restaurantTagRepository;
         this.userRepository = userRepository;
         this.mapper = mapper;
+        this.restaurantUploadRoot = Paths.get(restaurantUploadDir).toAbsolutePath().normalize();
     }
 
     @GetMapping
@@ -77,6 +98,42 @@ public class RestaurantController {
     @Transactional(readOnly = true)
     public List<String> getTags() {
         return restaurantTagRepository.findDistinctTagNames();
+    }
+
+    @PostMapping(value = "/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> uploadRestaurantImages(
+            @RequestParam(value = "images", required = false) List<MultipartFile> images
+    ) {
+        try {
+            return ResponseEntity.ok(storeUploadedImages(images));
+        } catch (IllegalArgumentException | IOException exception) {
+            return badRequest(exception.getMessage());
+        }
+    }
+
+    @GetMapping("/images/{fileName:.+}")
+    public ResponseEntity<Resource> getRestaurantImage(@PathVariable String fileName) throws MalformedURLException {
+        Path imagePath = restaurantUploadRoot.resolve(fileName).normalize();
+        if (!imagePath.startsWith(restaurantUploadRoot)) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        Resource resource = new UrlResource(imagePath.toUri());
+        if (!resource.exists() || !resource.isReadable()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String contentType;
+        try {
+            contentType = Files.probeContentType(imagePath);
+        } catch (IOException exception) {
+            contentType = MediaType.APPLICATION_OCTET_STREAM_VALUE;
+        }
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(contentType == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : contentType))
+                .header(HttpHeaders.CACHE_CONTROL, "public, max-age=31536000")
+                .body(resource);
     }
 
     @PostMapping
@@ -199,6 +256,85 @@ public class RestaurantController {
             item.setIsAvailable(true);
             restaurant.getMenuItems().add(item);
         }
+    }
+
+    private List<String> storeUploadedImages(List<MultipartFile> files) throws IOException {
+        if (files == null || files.isEmpty()) {
+            return List.of();
+        }
+
+        List<MultipartFile> validFiles = files.stream()
+                .filter(file -> file != null && !file.isEmpty())
+                .toList();
+
+        if (validFiles.size() > MAX_RESTAURANT_IMAGES) {
+            throw new IllegalArgumentException("A restaurant can include up to 8 images");
+        }
+
+        Files.createDirectories(restaurantUploadRoot);
+
+        return validFiles.stream()
+                .map(this::storeUploadedImage)
+                .toList();
+    }
+
+    private String storeUploadedImage(MultipartFile file) {
+        validateImage(file);
+
+        String fileName = "restaurant-" + UUID.randomUUID() + extensionFor(file);
+        Path destination = restaurantUploadRoot.resolve(fileName).normalize();
+
+        try {
+            Files.copy(file.getInputStream(), destination);
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("Cannot store restaurant image", exception);
+        }
+
+        return ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/restaurants/images/")
+                .path(fileName)
+                .toUriString();
+    }
+
+    private void validateImage(MultipartFile file) {
+        if (file.getSize() > MAX_IMAGE_SIZE_BYTES) {
+            throw new IllegalArgumentException("Each image must be 10MB or smaller");
+        }
+
+        String contentType = file.getContentType() == null
+                ? ""
+                : file.getContentType().toLowerCase(Locale.ROOT);
+
+        if (!ALLOWED_IMAGE_TYPES.contains(contentType)) {
+            throw new IllegalArgumentException("Only jpg, jpeg, png, and webp images are allowed");
+        }
+
+        String filename = file.getOriginalFilename() == null
+                ? ""
+                : file.getOriginalFilename().toLowerCase(Locale.ROOT);
+
+        if (!(filename.endsWith(".jpg")
+                || filename.endsWith(".jpeg")
+                || filename.endsWith(".png")
+                || filename.endsWith(".webp"))) {
+            throw new IllegalArgumentException("Only jpg, jpeg, png, and webp images are allowed");
+        }
+    }
+
+    private String extensionFor(MultipartFile file) {
+        String filename = file.getOriginalFilename() == null
+                ? ""
+                : file.getOriginalFilename().toLowerCase(Locale.ROOT);
+
+        if (filename.endsWith(".jpeg")) return ".jpeg";
+        if (filename.endsWith(".png")) return ".png";
+        if (filename.endsWith(".webp")) return ".webp";
+        return ".jpg";
+    }
+
+    private ResponseEntity<Map<String, String>> badRequest(String message) {
+        String safeMessage = message == null || message.isBlank() ? "Invalid restaurant image request" : message;
+        return ResponseEntity.badRequest().body(Map.of("message", safeMessage));
     }
 
     private String valueOrDefault(String value, String defaultValue) {

@@ -1,17 +1,28 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router";
 import {
-  ChevronLeft, Save, Upload, Plus, X, CheckCircle, ToggleLeft, ToggleRight
+  ChevronLeft, Save, Upload, Plus, X, CheckCircle, ToggleLeft, ToggleRight, AlertCircle
 } from "lucide-react";
-import { getFoodTags, getRestaurant, updateRestaurant } from "../api/client";
+import { getFoodTags, getRestaurant, updateRestaurant, uploadRestaurantImages } from "../api/client";
 import type { MenuItem, Restaurant } from "../types";
 import { useAuth } from "../context/AuthContext";
 import { useApiData } from "../hooks/useApiData";
+import { useLanguage } from "../context/LanguageContext";
+
+const MAX_RESTAURANT_IMAGES = 8;
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+interface SelectedRestaurantImage {
+  file: File;
+  previewUrl: string;
+}
 
 export function ManageRestaurantPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { isLoggedIn } = useAuth();
+  const { language, t } = useLanguage();
   const { data: foodTags } = useApiData(getFoodTags, [], []);
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,12 +45,20 @@ export function ManageRestaurantPage() {
   const [activeTab, setActiveTab] = useState<"basic" | "menu" | "photos">("basic");
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [images, setImages] = useState<string[]>([]);
+  const [selectedImages, setSelectedImages] = useState<SelectedRestaurantImage[]>([]);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const selectedImagesRef = useRef<SelectedRestaurantImage[]>([]);
 
-  const sampleImages = [
-    "https://images.unsplash.com/photo-1677837914128-2367031a11e7?w=600&h=400&fit=crop",
-    "https://images.unsplash.com/photo-1761409260819-c6da12bbb2c0?w=600&h=400&fit=crop",
-    "https://images.unsplash.com/photo-1763703544688-2ac7839b0659?w=600&h=400&fit=crop",
-  ];
+  useEffect(() => {
+    selectedImagesRef.current = selectedImages;
+  }, [selectedImages]);
+
+  useEffect(() => {
+    return () => {
+      selectedImagesRef.current.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+    };
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -65,6 +84,11 @@ export function ManageRestaurantPage() {
         });
         setMenuItems(data.menu);
         setImages(data.images);
+        setSelectedImages((prev) => {
+          prev.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+          return [];
+        });
+        setErrors({});
       })
       .catch(() => {
         if (mounted) setRestaurant(null);
@@ -95,18 +119,36 @@ export function ManageRestaurantPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Link to="/owner/restaurants" className="text-blue-600 hover:underline">
-          Restaurant not found
+          {t.manageStore.notFound}
         </Link>
       </div>
     );
   }
 
+  const primaryName = language === "vi" ? restaurant.nameVn : restaurant.nameJp;
+  const secondaryName = language === "vi" ? restaurant.nameJp : restaurant.nameVn;
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!restaurant) return;
+    if (!restaurant || saving) return;
 
     try {
       setSaving(true);
+      setErrors((prev) => ({ ...prev, submit: "" }));
+
+      let nextImages = images;
+      if (selectedImages.length > 0) {
+        const uploadedImageUrls = await uploadRestaurantImages(
+          selectedImages.map((image) => image.file)
+        );
+        nextImages = [...images, ...uploadedImageUrls];
+        setImages(nextImages);
+        setSelectedImages((prev) => {
+          prev.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+          return [];
+        });
+      }
+
       const savedRestaurant = await updateRestaurant(restaurant.id, {
         ownerId: restaurant.ownerId,
         nameVn: formData.nameVn,
@@ -116,8 +158,8 @@ export function ManageRestaurantPage() {
         phone: formData.phone,
         description: formData.description,
         descriptionJp: formData.descriptionJp,
-        coverImage: images[0] || restaurant.coverImage,
-        images,
+        coverImage: nextImages[0] || restaurant.coverImage,
+        images: nextImages,
         menu: menuItems.filter((item) => item.nameVn.trim()),
         openHours: formData.openHours,
         priceRange: restaurant.priceRange,
@@ -133,6 +175,11 @@ export function ManageRestaurantPage() {
       setImages(savedRestaurant.images);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      const message = err instanceof Error && err.message
+        ? err.message
+        : t.manageStore.submitError;
+      setErrors((prev) => ({ ...prev, submit: message }));
     } finally {
       setSaving(false);
     }
@@ -162,10 +209,49 @@ export function ManageRestaurantPage() {
     setMenuItems((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const addSampleImage = () => {
-    if (images.length < 8) {
-      setImages((prev) => [...prev, sampleImages[prev.length % sampleImages.length]]);
+  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+
+    if (files.length === 0) return;
+
+    if (images.length + selectedImages.length + files.length > MAX_RESTAURANT_IMAGES) {
+      setErrors((prev) => ({ ...prev, images: t.manageStore.errorImageCount }));
+      return;
     }
+
+    const nextImages: SelectedRestaurantImage[] = [];
+
+    for (const file of files) {
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        setErrors((prev) => ({ ...prev, images: t.manageStore.errorImageType }));
+        nextImages.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+        return;
+      }
+
+      if (file.size > MAX_IMAGE_SIZE_BYTES) {
+        setErrors((prev) => ({ ...prev, images: t.manageStore.errorImageSize }));
+        nextImages.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+        return;
+      }
+
+      nextImages.push({
+        file,
+        previewUrl: URL.createObjectURL(file),
+      });
+    }
+
+    setSelectedImages((prev) => [...prev, ...nextImages]);
+    setErrors((prev) => ({ ...prev, images: "", submit: "" }));
+  };
+
+  const removeSelectedImage = (index: number) => {
+    setSelectedImages((prev) => {
+      const removedImage = prev[index];
+      if (removedImage) URL.revokeObjectURL(removedImage.previewUrl);
+      return prev.filter((_, currentIndex) => currentIndex !== index);
+    });
+    setErrors((prev) => ({ ...prev, images: "" }));
   };
 
   const toggleTag = (tag: string) => {
@@ -195,16 +281,16 @@ export function ManageRestaurantPage() {
               className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
             >
               <ChevronLeft className="w-4 h-4" />
-              戻る
+              {t.manageStore.back}
             </button>
             <span className="text-gray-300">/</span>
-            <span className="text-sm text-gray-700 truncate">{restaurant.nameJp}</span>
+            <span className="text-sm text-gray-700 truncate">{primaryName}</span>
           </div>
           <Link
             to={`/restaurant/${restaurant.id}`}
             className="text-sm text-blue-600 hover:text-blue-700"
           >
-            公開ページ →
+            {t.manageStore.publicPage}
           </Link>
         </div>
       </div>
@@ -221,8 +307,8 @@ export function ManageRestaurantPage() {
             <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
             <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between">
               <div>
-                <h2 className="text-white">{restaurant.nameJp}</h2>
-                <p className="text-white/70 text-xs">{restaurant.nameVn}</p>
+                <h2 className="text-white">{primaryName}</h2>
+                <p className="text-white/70 text-xs">{secondaryName}</p>
               </div>
               <button
                 type="button"
@@ -238,7 +324,7 @@ export function ManageRestaurantPage() {
                 ) : (
                   <ToggleLeft className="w-4 h-4" />
                 )}
-                {formData.status === "open" ? "営業中" : "閉店"}
+                {formData.status === "open" ? t.manageStore.open : t.manageStore.closed}
               </button>
             </div>
           </div>
@@ -248,14 +334,21 @@ export function ManageRestaurantPage() {
         {saved && (
           <div className="flex items-center gap-2 p-3 mb-4 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">
             <CheckCircle className="w-4 h-4" />
-            変更を保存しました！
+            {t.manageStore.saved}
+          </div>
+        )}
+
+        {errors.submit && (
+          <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            {errors.submit}
           </div>
         )}
 
         {/* Tabs */}
         <div className="flex gap-2 mb-6">
           {(["basic", "menu", "photos"] as const).map((tab) => {
-            const labels = { basic: "基本情報", menu: "メニュー", photos: "写真・タグ" };
+            const labels = t.manageStore.tabs;
             return (
               <button
                 key={tab}
@@ -278,7 +371,7 @@ export function ManageRestaurantPage() {
             <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-700 mb-1.5">店名（ベトナム語）</label>
+                  <label className="block text-sm text-gray-700 mb-1.5">{t.manageStore.nameVn}</label>
                   <input
                     type="text"
                     value={formData.nameVn}
@@ -287,7 +380,7 @@ export function ManageRestaurantPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-700 mb-1.5">店名（日本語）</label>
+                  <label className="block text-sm text-gray-700 mb-1.5">{t.manageStore.nameJp}</label>
                   <input
                     type="text"
                     value={formData.nameJp}
@@ -298,7 +391,7 @@ export function ManageRestaurantPage() {
               </div>
 
               <div>
-                <label className="block text-sm text-gray-700 mb-1.5">住所</label>
+                <label className="block text-sm text-gray-700 mb-1.5">{t.manageStore.address}</label>
                 <input
                   type="text"
                   value={formData.address}
@@ -308,7 +401,7 @@ export function ManageRestaurantPage() {
               </div>
 
               <div>
-                <label className="block text-sm text-gray-700 mb-1.5">電話番号</label>
+                <label className="block text-sm text-gray-700 mb-1.5">{t.manageStore.phone}</label>
                 <input
                   type="tel"
                   value={formData.phone}
@@ -319,7 +412,7 @@ export function ManageRestaurantPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-700 mb-1.5">営業時間</label>
+                  <label className="block text-sm text-gray-700 mb-1.5">{t.manageStore.openHours}</label>
                   <input
                     type="text"
                     value={formData.openHours}
@@ -328,7 +421,7 @@ export function ManageRestaurantPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-700 mb-1.5">平均単価 (VND)</label>
+                  <label className="block text-sm text-gray-700 mb-1.5">{t.manageStore.avgPrice}</label>
                   <input
                     type="number"
                     value={formData.avgPrice}
@@ -339,7 +432,7 @@ export function ManageRestaurantPage() {
               </div>
 
               <div>
-                <label className="block text-sm text-gray-700 mb-1.5">説明（ベトナム語）</label>
+                <label className="block text-sm text-gray-700 mb-1.5">{t.manageStore.descVn}</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -349,7 +442,7 @@ export function ManageRestaurantPage() {
               </div>
 
               <div>
-                <label className="block text-sm text-gray-700 mb-1.5">説明（日本語）</label>
+                <label className="block text-sm text-gray-700 mb-1.5">{t.manageStore.descJp}</label>
                 <textarea
                   value={formData.descriptionJp}
                   onChange={(e) => setFormData({ ...formData, descriptionJp: e.target.value })}
@@ -365,7 +458,7 @@ export function ManageRestaurantPage() {
                 style={{ background: "linear-gradient(135deg, #0066CC 0%, #004499 100%)" }}
               >
                 <Save className="w-4 h-4" />
-                変更を保存
+                {t.manageStore.saveChanges}
               </button>
             </div>
           )}
@@ -374,14 +467,14 @@ export function ManageRestaurantPage() {
           {activeTab === "menu" && (
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
               <div className="flex items-center justify-between mb-5">
-                <h3 className="text-gray-900">メニュー管理</h3>
+                <h3 className="text-gray-900">{t.manageStore.menuTitle}</h3>
                 <button
                   type="button"
                   onClick={addMenuItem}
                   className="flex items-center gap-1.5 px-3 py-2 text-sm text-blue-600 border border-blue-200 rounded-xl hover:bg-blue-50"
                 >
                   <Plus className="w-4 h-4" />
-                  追加
+                  {t.manageStore.add}
                 </button>
               </div>
               <div className="space-y-3">
@@ -405,14 +498,14 @@ export function ManageRestaurantPage() {
                         value={item.price}
                         onChange={(e) => updateMenuItem(index, "price", e.target.value)}
                         className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
-                        placeholder="価格"
+                        placeholder={t.manageStore.price}
                       />
                       <input
                         type="text"
                         value={item.description || ""}
                         onChange={(e) => updateMenuItem(index, "description", e.target.value)}
                         className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
-                        placeholder="説明"
+                        placeholder={t.manageStore.description}
                       />
                     </div>
                     <button
@@ -432,7 +525,7 @@ export function ManageRestaurantPage() {
                 style={{ background: "linear-gradient(135deg, #0066CC 0%, #004499 100%)" }}
               >
                 <Save className="w-4 h-4" />
-                メニューを保存
+                {t.manageStore.saveMenu}
               </button>
             </div>
           )}
@@ -441,11 +534,11 @@ export function ManageRestaurantPage() {
           {activeTab === "photos" && (
             <div className="space-y-5">
               <div className="bg-white rounded-2xl border border-gray-100 p-6">
-                <h3 className="text-gray-900 mb-4">写真管理</h3>
+                <h3 className="text-gray-900 mb-4">{t.manageStore.photoTitle}</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {images.map((img, i) => (
-                    <div key={i} className="aspect-video rounded-xl overflow-hidden relative group">
-                      <img src={img} alt="restaurant" className="w-full h-full object-cover" />
+                    <div key={`${img}-${i}`} className="aspect-video rounded-xl overflow-hidden relative group">
+                      <img src={img} alt={`${primaryName} ${i + 1}`} className="w-full h-full object-cover" />
                       <button
                         type="button"
                         onClick={() => setImages(images.filter((_, index) => index !== i))}
@@ -455,19 +548,47 @@ export function ManageRestaurantPage() {
                       </button>
                     </div>
                   ))}
-                  <button
-                    type="button"
-                    onClick={addSampleImage}
-                    className="aspect-video rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-blue-300 hover:text-blue-400 transition-colors"
-                  >
-                    <Upload className="w-6 h-6" />
-                    <span className="text-xs">写真を追加</span>
-                  </button>
+                  {selectedImages.map((image, i) => (
+                    <div key={image.previewUrl} className="aspect-video rounded-xl overflow-hidden relative group">
+                      <img src={image.previewUrl} alt={image.file.name} className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => removeSelectedImage(i)}
+                        className="absolute top-2 right-2 w-7 h-7 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="w-4 h-4 text-white" />
+                      </button>
+                    </div>
+                  ))}
+                  {images.length + selectedImages.length < MAX_RESTAURANT_IMAGES && (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="aspect-video rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-blue-300 hover:text-blue-400 transition-colors"
+                    >
+                      <Upload className="w-6 h-6" />
+                      <span className="text-xs">{t.manageStore.addPhoto}</span>
+                    </button>
+                  )}
                 </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                  multiple
+                  onChange={handleImageSelect}
+                  className="hidden"
+                />
+                {errors.images && (
+                  <p className="text-xs text-red-500 mt-3 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    {errors.images}
+                  </p>
+                )}
               </div>
 
               <div className="bg-white rounded-2xl border border-gray-100 p-6">
-                <h3 className="text-gray-900 mb-4">料理タグ</h3>
+                <h3 className="text-gray-900 mb-4">{t.manageStore.tagTitle}</h3>
                 <div className="flex flex-wrap gap-2">
                   {foodTags.map((tag) => (
                     <button
@@ -493,7 +614,7 @@ export function ManageRestaurantPage() {
                 style={{ background: "linear-gradient(135deg, #0066CC 0%, #004499 100%)" }}
               >
                 <Save className="w-4 h-4" />
-                変更を保存
+                {t.manageStore.savePhotos}
               </button>
             </div>
           )}
