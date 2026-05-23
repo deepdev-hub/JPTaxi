@@ -101,6 +101,12 @@ export function updateRestaurant(id: string, data: SaveRestaurantPayload) {
   });
 }
 
+export function uploadRestaurantImages(imageFiles: File[]) {
+  const formData = new FormData();
+  imageFiles.forEach((file) => formData.append("images", file));
+  return requestForm<string[]>("/restaurants/images", formData);
+}
+
 export function getReviews(restaurantId?: string, userId?: string) {
   const params = new URLSearchParams();
   if (restaurantId) params.set("restaurantId", restaurantId);
