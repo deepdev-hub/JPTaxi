@@ -107,6 +107,12 @@ export function uploadRestaurantImages(imageFiles: File[]) {
   return requestForm<string[]>("/restaurants/images", formData);
 }
 
+export function uploadMenuImage(imageFile: File) {
+  const formData = new FormData();
+  formData.append("image", imageFile);
+  return requestForm<{ url: string }>("/restaurants/menu-images", formData);
+}
+
 export function getReviews(restaurantId?: string, userId?: string) {
   const params = new URLSearchParams();
   if (restaurantId) params.set("restaurantId", restaurantId);

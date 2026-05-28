@@ -1,10 +1,38 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router";
 import {
   ChevronLeft, Plus, X, Upload, Clock, MapPin, Tag,
-  CheckCircle, AlertCircle, DollarSign
+  CheckCircle, AlertCircle, DollarSign, Search
 } from "lucide-react";
-import { createRestaurant, getFoodTags } from "../api/client";
+import { createRestaurant, getFoodTags, uploadMenuImage } from "../api/client";
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+import L from "leaflet";
+
+// Fix leaflet marker icon issue in Vite
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+});
+
+// Thành phần hỗ trợ click trên bản đồ
+function MapEvents({ onLocationSelect }: { onLocationSelect: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onLocationSelect(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
+
+// Thành phần hỗ trợ di chuyển bản đồ đến điểm mới
+function MapUpdater({ center }: { center: {lat: number, lng: number} }) {
+  const map = useMap();
+  map.flyTo([center.lat, center.lng], map.getZoom());
+  return null;
+}
 import { useAuth } from "../context/AuthContext";
 import { useApiData } from "../hooks/useApiData";
 import { useLanguage } from "../context/LanguageContext";
@@ -14,6 +42,8 @@ interface MenuItemForm {
   nameJp: string;
   price: string;
   description: string;
+  image?: string;
+  isUploadingImage?: boolean;
 }
 
 export function RegisterRestaurantPage() {
@@ -43,6 +73,35 @@ export function RegisterRestaurantPage() {
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [currentStep, setCurrentStep] = useState(1);
+  const [showMapModal, setShowMapModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [mapCenter, setMapCenter] = useState<{lat: number, lng: number}>({ lat: 21.027764, lng: 105.83416 });
+  const [selectedLocation, setSelectedLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+
+  const handleNumericInput = (value: string, setter: (val: string) => void) => {
+    if (/[^\d]/.test(value)) {
+      alert("Vui lòng chỉ nhập số, không nhập chữ hay ký tự đặc biệt!");
+      setter(value.replace(/[^\d]/g, ""));
+    } else {
+      setter(value);
+    }
+  };
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (searchQuery.trim().length > 2) {
+        handleSearchAddress(searchQuery.trim());
+      } else {
+        setSuggestions([]);
+        setHasSearched(false);
+      }
+    }, 800);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery]);
 
   if (!isLoggedIn || !currentUser) {
     navigate("/login");
@@ -69,8 +128,8 @@ export function RegisterRestaurantPage() {
     setMenuItems(menuItems.filter((_, i) => i !== index));
   };
 
-  const updateMenuItem = (index: number, field: keyof MenuItemForm, value: string) => {
-    setMenuItems(menuItems.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
+  const updateMenuItem = (index: number, field: string, value: any) => {
+    setMenuItems(prev => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
   };
 
   const toggleTag = (tag: string) => {
@@ -88,6 +147,11 @@ export function RegisterRestaurantPage() {
       if (!formData.nameVn.trim()) newErrors.nameVn = t.registerStore.errNameVn;
       if (!formData.nameJp.trim()) newErrors.nameJp = t.registerStore.errNameJp;
       if (!formData.address.trim()) newErrors.address = t.registerStore.errAddress;
+      if (!formData.phone.trim()) newErrors.phone = t.registerStore.errPhone;
+      if (!formData.openHours.trim()) newErrors.openHours = t.registerStore.errOpenHours;
+      if (!formData.avgPrice.toString().trim()) newErrors.avgPrice = t.registerStore.errAvgPrice;
+      if (!formData.description.trim()) newErrors.description = t.registerStore.errDescVn;
+      if (!formData.descriptionJp.trim()) newErrors.descriptionJp = t.registerStore.errDescJp;
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -96,6 +160,48 @@ export function RegisterRestaurantPage() {
   const handleNext = () => {
     if (validateStep(currentStep)) {
       setCurrentStep(currentStep + 1);
+    }
+  };
+
+  const handleSearchAddress = async (query: string) => {
+    setIsSearching(true);
+    setHasSearched(false);
+    try {
+      let results = [];
+      // Lần 1: Tìm kiếm chính xác những gì user gõ
+      let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&countrycodes=vn`);
+      if (res.ok) {
+        results = await res.json();
+      }
+      
+      // Lần 2: Nếu không tìm thấy, thử thêm chữ "Hà Nội" để OpenStreetMap dễ nhận diện hơn (OSM rất khó tính với số nhà thiếu tên thành phố)
+      if (results.length === 0 && !query.toLowerCase().includes('hà nội') && !query.toLowerCase().includes('hanoi')) {
+        res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Hà Nội')}&limit=5&countrycodes=vn`);
+        if (res.ok) {
+          results = await res.json();
+        }
+      }
+      
+      setSuggestions(results || []);
+    } catch (error) {
+      console.error("Error fetching location", error);
+      setSuggestions([]);
+    } finally {
+      setIsSearching(false);
+      setHasSearched(true);
+    }
+  };
+
+  const handleMapClick = async (lat: number, lng: number) => {
+    setSelectedLocation({ lat, lng });
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+      const data = await res.json();
+      if (data && data.display_name) {
+        setSearchQuery(data.display_name);
+      }
+    } catch (error) {
+      console.error("Error reverse geocoding", error);
     }
   };
 
@@ -126,13 +232,14 @@ export function RegisterRestaurantPage() {
             nameJp: item.nameJp || item.nameVn,
             price: Number(item.price) || 0,
             description: item.description,
+            image: item.image,
           })),
         openHours: formData.openHours,
         avgPrice: Number(formData.avgPrice) || 0,
         tags: formData.selectedTags,
         status: "closed",
-        lat: 21.027764,
-        lng: 105.83416,
+        lat: selectedLocation ? selectedLocation.lat : 21.027764,
+        lng: selectedLocation ? selectedLocation.lng : 105.83416,
       });
       setSubmitted(true);
       setTimeout(() => {
@@ -279,6 +386,7 @@ export function RegisterRestaurantPage() {
                     )}
                     <button
                       type="button"
+                      onClick={() => setShowMapModal(true)}
                       className="mt-2 text-xs text-blue-500 hover:text-blue-600 flex items-center gap-1"
                     >
                       <MapPin className="w-3 h-3" />
@@ -287,65 +395,92 @@ export function RegisterRestaurantPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-700 mb-1.5">{t.registerStore.phone}</label>
+                    <label className="block text-sm text-gray-700 mb-1.5">{t.registerStore.phone}<span className="text-red-400">*</span></label>
                     <input
-                      type="tel"
+                      type="text"
+                      inputMode="numeric"
                       value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      placeholder="024 3826 1011"
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors"
+                      onChange={(e) => handleNumericInput(e.target.value, (val) => setFormData({ ...formData, phone: val }))}
+                      placeholder="0912345678"
+                      className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors ${
+                        errors.phone ? "border-red-300" : "border-gray-200"
+                      }`}
                     />
+                    {errors.phone && (
+                      <p className="text-xs text-red-500 mt-1">{errors.phone}</p>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm text-gray-700 mb-1.5">
                         <Clock className="inline w-4 h-4 mr-1" />
-                        {t.registerStore.openHours}
+                        {t.registerStore.openHours}<span className="text-red-400">*</span>
                       </label>
                       <input
                         type="text"
                         value={formData.openHours}
                         onChange={(e) => setFormData({ ...formData, openHours: e.target.value })}
                         placeholder="10:00 - 21:00"
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors"
+                        className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors ${
+                          errors.openHours ? "border-red-300" : "border-gray-200"
+                        }`}
                       />
+                      {errors.openHours && (
+                        <p className="text-xs text-red-500 mt-1">{errors.openHours}</p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm text-gray-700 mb-1.5">
                         <DollarSign className="inline w-4 h-4 mr-1" />
-                        {t.registerStore.avgPrice}
+                        {t.registerStore.avgPrice}<span className="text-red-400">*</span>
                       </label>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
                         value={formData.avgPrice}
-                        onChange={(e) => setFormData({ ...formData, avgPrice: e.target.value })}
+                        onChange={(e) => handleNumericInput(e.target.value, (val) => setFormData({ ...formData, avgPrice: val }))}
                         placeholder="65000"
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors"
+                        className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors ${
+                          errors.avgPrice ? "border-red-300" : "border-gray-200"
+                        }`}
                       />
+                      {errors.avgPrice && (
+                        <p className="text-xs text-red-500 mt-1">{errors.avgPrice}</p>
+                      )}
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-700 mb-1.5">{t.registerStore.descVn}</label>
+                    <label className="block text-sm text-gray-700 mb-1.5">{t.registerStore.descVn}<span className="text-red-400">*</span></label>
                     <textarea
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                       placeholder={t.registerStore.descVnPh}
                       rows={3}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors resize-none"
+                      className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors resize-none ${
+                        errors.description ? "border-red-300" : "border-gray-200"
+                      }`}
                     />
+                    {errors.description && (
+                      <p className="text-xs text-red-500 mt-1">{errors.description}</p>
+                    )}
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-700 mb-1.5">{t.registerStore.descJp}</label>
+                    <label className="block text-sm text-gray-700 mb-1.5">{t.registerStore.descJp}<span className="text-red-400">*</span></label>
                     <textarea
                       value={formData.descriptionJp}
                       onChange={(e) => setFormData({ ...formData, descriptionJp: e.target.value })}
                       placeholder={t.registerStore.descJpPh}
                       rows={3}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors resize-none"
+                      className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors resize-none ${
+                        errors.descriptionJp ? "border-red-300" : "border-gray-200"
+                      }`}
                     />
+                    {errors.descriptionJp && (
+                      <p className="text-xs text-red-500 mt-1">{errors.descriptionJp}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -408,9 +543,10 @@ export function RegisterRestaurantPage() {
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <input
-                          type="number"
+                          type="text"
+                          inputMode="numeric"
                           value={item.price}
-                          onChange={(e) => updateMenuItem(index, "price", e.target.value)}
+                          onChange={(e) => handleNumericInput(e.target.value, (val) => updateMenuItem(index, "price", val))}
                           placeholder={t.registerStore.price}
                           className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
                         />
@@ -421,6 +557,54 @@ export function RegisterRestaurantPage() {
                           placeholder={t.registerStore.dishDesc}
                           className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
                         />
+                      </div>
+                      <div className="mt-3 flex items-center gap-4">
+                        <div className="relative">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            id={`menu-image-${index}`}
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  if (typeof reader.result === "string") {
+                                    updateMenuItem(index, "image", reader.result);
+                                  }
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                          />
+                          <label
+                            htmlFor={`menu-image-${index}`}
+                            className="cursor-pointer flex items-center justify-center w-16 h-16 bg-white border border-dashed border-gray-300 rounded-lg text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-colors overflow-hidden"
+                          >
+                            {item.isUploadingImage ? (
+                              <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                            ) : item.image ? (
+                              <img src={item.image} alt="Menu item" className="w-full h-full object-cover" />
+                            ) : (
+                              <Upload className="w-5 h-5" />
+                            )}
+                          </label>
+                        </div>
+                        {!item.image && !item.isUploadingImage && (
+                          <div className="text-xs text-gray-400">
+                            Thêm ảnh minh họa cho món ăn
+                          </div>
+                        )}
+                        {item.image && (
+                          <button
+                            type="button"
+                            onClick={() => updateMenuItem(index, "image", "")}
+                            className="text-xs text-red-500 hover:underline"
+                          >
+                            Xóa ảnh
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -530,6 +714,100 @@ export function RegisterRestaurantPage() {
           )}
         </form>
       </div>
+
+      {showMapModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl overflow-hidden flex flex-col" style={{ height: '80vh' }}>
+            {/* Header */}
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-900">Chọn vị trí trên bản đồ</h3>
+              <button type="button" onClick={() => setShowMapModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {/* Search & Map */}
+            <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden relative">
+              <div className="relative z-[1000]">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input 
+                    type="text" 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Nhập tên đường, khu vực..."
+                    className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-400"
+                  />
+                </div>
+                
+                {isSearching && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-sm text-gray-500 text-center">
+                    Đang tìm kiếm...
+                  </div>
+                )}
+                
+                {/* Suggestions Dropdown */}
+                {!isSearching && suggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">
+                    {suggestions.map((item, idx) => (
+                      <div 
+                        key={idx}
+                        className="p-3 hover:bg-gray-50 cursor-pointer text-sm border-b border-gray-50 last:border-0"
+                        onClick={() => {
+                          const lat = parseFloat(item.lat);
+                          const lon = parseFloat(item.lon);
+                          setMapCenter({lat, lng: lon});
+                          setSelectedLocation({lat, lng: lon});
+                          setSearchQuery(item.display_name);
+                          setSuggestions([]);
+                        }}
+                      >
+                        {item.display_name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* No results */}
+                {!isSearching && hasSearched && suggestions.length === 0 && searchQuery.trim().length > 2 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-sm text-gray-500 text-center">
+                    Không tìm thấy địa điểm nào phù hợp.
+                  </div>
+                )}
+              </div>
+
+                {/* Map Container */}
+              <div className="flex-1 rounded-xl overflow-hidden border border-gray-200 relative z-0">
+                <MapContainer center={[mapCenter.lat, mapCenter.lng]} zoom={13} style={{ height: '100%', width: '100%' }}>
+                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                  <MapUpdater center={mapCenter} />
+                  <MapEvents onLocationSelect={handleMapClick} />
+                  {selectedLocation && (
+                    <Marker position={[selectedLocation.lat, selectedLocation.lng]} />
+                  )}
+                </MapContainer>
+              </div>
+            </div>
+
+            {/* Footer / Confirm Button */}
+            <div className="p-4 border-t border-gray-100 flex justify-end gap-3">
+              <button type="button" onClick={() => setShowMapModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl">
+                Hủy
+              </button>
+              <button 
+                type="button"
+                onClick={() => {
+                  setFormData({...formData, address: searchQuery});
+                  setShowMapModal(false);
+                }}
+                className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-xl"
+              >
+                Xác nhận địa chỉ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
