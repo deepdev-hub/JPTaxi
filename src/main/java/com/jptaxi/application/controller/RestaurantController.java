@@ -57,19 +57,22 @@ public class RestaurantController {
     private final UserRepository userRepository;
     private final DtoMapper mapper;
     private final Path restaurantUploadRoot;
+    private final Path menuUploadRoot;
 
     public RestaurantController(
             RestaurantRepository restaurantRepository,
             RestaurantTagRepository restaurantTagRepository,
             UserRepository userRepository,
             DtoMapper mapper,
-            @Value("${app.upload.restaurant-dir:uploads/restaurants}") String restaurantUploadDir
+            @Value("${app.upload.restaurant-dir:uploads/restaurants}") String restaurantUploadDir,
+            @Value("${app.upload.menu-dir:uploads/menu_items}") String menuUploadDir
     ) {
         this.restaurantRepository = restaurantRepository;
         this.restaurantTagRepository = restaurantTagRepository;
         this.userRepository = userRepository;
         this.mapper = mapper;
         this.restaurantUploadRoot = Paths.get(restaurantUploadDir).toAbsolutePath().normalize();
+        this.menuUploadRoot = Paths.get(menuUploadDir).toAbsolutePath().normalize();
     }
 
     @GetMapping
@@ -134,6 +137,60 @@ public class RestaurantController {
                 .contentType(MediaType.parseMediaType(contentType == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : contentType))
                 .header(HttpHeaders.CACHE_CONTROL, "public, max-age=31536000")
                 .body(resource);
+    }
+
+    @PostMapping(value = "/menu-images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> uploadMenuImage(
+            @RequestParam("image") MultipartFile image
+    ) {
+        try {
+            if (image == null || image.isEmpty()) {
+                throw new IllegalArgumentException("Image is required");
+            }
+            Files.createDirectories(menuUploadRoot);
+            validateImage(image);
+            
+            String fileName = "menu-" + UUID.randomUUID() + extensionFor(image);
+            Path destination = menuUploadRoot.resolve(fileName).normalize();
+            Files.copy(image.getInputStream(), destination);
+            
+            String url = ServletUriComponentsBuilder.fromCurrentContextPath()
+                    .path("/api/restaurants/menu-images/")
+                    .path(fileName)
+                    .toUriString();
+            return ResponseEntity.ok(Map.of("url", url));
+        } catch (IllegalArgumentException | IOException exception) {
+            return badRequest(exception.getMessage());
+        }
+    }
+
+    @GetMapping("/menu-images/{fileName:.+}")
+    public ResponseEntity<Resource> getMenuImage(@PathVariable String fileName) {
+        Path imagePath = menuUploadRoot.resolve(fileName).normalize();
+        if (!imagePath.startsWith(menuUploadRoot)) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        try {
+            Resource resource = new UrlResource(imagePath.toUri());
+            if (!resource.exists() || !resource.isReadable()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            String contentType;
+            try {
+                contentType = Files.probeContentType(imagePath);
+            } catch (IOException exception) {
+                contentType = MediaType.APPLICATION_OCTET_STREAM_VALUE;
+            }
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(contentType == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : contentType))
+                    .header(HttpHeaders.CACHE_CONTROL, "public, max-age=31536000")
+                    .body(resource);
+        } catch (MalformedURLException e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
     @PostMapping
@@ -294,9 +351,44 @@ public class RestaurantController {
             item.setNameJp(valueOrDefault(itemDto.nameJp(), itemDto.nameVn()));
             item.setPrice(itemDto.price() == null ? BigDecimal.ZERO : itemDto.price());
             item.setDescription(itemDto.description());
-            item.setImage(itemDto.image());
+            
+            String imageUrl = itemDto.image();
+            if (imageUrl != null && imageUrl.startsWith("data:image/")) {
+                imageUrl = saveBase64Image(imageUrl);
+            }
+            item.setImage(imageUrl);
+            
             item.setIsAvailable(true);
             restaurant.getMenuItems().add(item);
+        }
+    }
+
+    private String saveBase64Image(String base64Image) {
+        try {
+            String[] parts = base64Image.split(",");
+            String imageString = parts.length > 1 ? parts[1] : parts[0];
+            byte[] imageBytes = java.util.Base64.getDecoder().decode(imageString);
+
+            String extension = ".jpg";
+            if (parts.length > 1) {
+                String meta = parts[0];
+                if (meta.contains("image/png")) extension = ".png";
+                else if (meta.contains("image/webp")) extension = ".webp";
+                else if (meta.contains("image/jpeg")) extension = ".jpeg";
+            }
+
+            Files.createDirectories(menuUploadRoot);
+            String fileName = "menu-" + UUID.randomUUID() + extension;
+            Path destination = menuUploadRoot.resolve(fileName).normalize();
+            Files.write(destination, imageBytes);
+
+            return ServletUriComponentsBuilder.fromCurrentContextPath()
+                    .path("/api/restaurants/menu-images/")
+                    .path(fileName)
+                    .toUriString();
+        } catch (Exception e) {
+            System.err.println("Failed to save base64 image: " + e.getMessage());
+            return null;
         }
     }
 

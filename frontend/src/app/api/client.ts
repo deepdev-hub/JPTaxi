@@ -152,6 +152,12 @@ async function uploadImagesInChunks(path: string, imageFiles: File[], chunkSize:
   return uploadedUrls;
 }
 
+export function uploadMenuImage(imageFile: File) {
+  const formData = new FormData();
+  formData.append("image", imageFile);
+  return requestForm<{ url: string }>("/restaurants/menu-images", formData);
+}
+
 export function getReviews(restaurantId?: string, userId?: string) {
   const params = new URLSearchParams();
   if (restaurantId) params.set("restaurantId", restaurantId);
