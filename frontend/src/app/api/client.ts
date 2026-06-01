@@ -2,6 +2,25 @@ import type { Conversation, MenuItem, Message, Restaurant, Review, Role, User } 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8081/api";
 
+const DEFAULT_FOOD_TAGS = [
+  "Phở/フォー",
+  "Bò/牛肉",
+  "Gà/鶏肉",
+  "Bún chả/ブンチャー",
+  "Bánh mì/バインミー",
+  "Chả cá/チャーカー",
+  "Nem/ネム",
+  "Cơm/ご飯",
+  "Hải sản/海鮮",
+  "Chay/ベジタリアン",
+  "Truyền thống/伝統的",
+  "Nhanh/早い",
+  "Rẻ/安い",
+  "Sáng/朝食",
+  "Trưa/昼食",
+  "Tối/夕食",
+];
+
 export interface SaveRestaurantPayload {
   ownerId?: string;
   nameVn: string;
@@ -83,8 +102,21 @@ export function getRestaurant(id: string) {
   return request<Restaurant>(`/restaurants/${encodeURIComponent(id)}`);
 }
 
-export function getFoodTags() {
-  return request<string[]>("/restaurants/tags");
+export async function getFoodTags() {
+  try {
+    const tags = await request<string[]>("/restaurants/tags");
+    return mergeFoodTags(tags);
+  } catch {
+    return DEFAULT_FOOD_TAGS;
+  }
+}
+
+function mergeFoodTags(tags: string[]) {
+  const normalizedTags = tags
+    .filter((tag) => tag && tag.trim())
+    .map((tag) => tag.trim());
+
+  return Array.from(new Set([...normalizedTags, ...DEFAULT_FOOD_TAGS]));
 }
 
 export function createRestaurant(data: SaveRestaurantPayload) {
@@ -102,9 +134,22 @@ export function updateRestaurant(id: string, data: SaveRestaurantPayload) {
 }
 
 export function uploadRestaurantImages(imageFiles: File[]) {
-  const formData = new FormData();
-  imageFiles.forEach((file) => formData.append("images", file));
-  return requestForm<string[]>("/restaurants/images", formData);
+  return uploadImagesInChunks("/restaurants/images", imageFiles, 8);
+}
+
+async function uploadImagesInChunks(path: string, imageFiles: File[], chunkSize: number) {
+  const uploadedUrls: string[] = [];
+
+  for (let index = 0; index < imageFiles.length; index += chunkSize) {
+    const formData = new FormData();
+    imageFiles
+      .slice(index, index + chunkSize)
+      .forEach((file) => formData.append("images", file));
+    const chunkUrls = await requestForm<string[]>(path, formData);
+    uploadedUrls.push(...chunkUrls);
+  }
+
+  return uploadedUrls;
 }
 
 export function getReviews(restaurantId?: string, userId?: string) {

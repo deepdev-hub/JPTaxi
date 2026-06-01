@@ -18,6 +18,8 @@ interface SelectedRestaurantImage {
   previewUrl: string;
 }
 
+const menuItemKey = (item: MenuItem, index: number) => item.id || `menu-${index}`;
+
 export function ManageRestaurantPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -46,17 +48,25 @@ export function ManageRestaurantPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [images, setImages] = useState<string[]>([]);
   const [selectedImages, setSelectedImages] = useState<SelectedRestaurantImage[]>([]);
+  const [menuImageUploads, setMenuImageUploads] = useState<Record<string, SelectedRestaurantImage>>({});
+  const [photosTouched, setPhotosTouched] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedImagesRef = useRef<SelectedRestaurantImage[]>([]);
+  const menuImageUploadsRef = useRef<Record<string, SelectedRestaurantImage>>({});
 
   useEffect(() => {
     selectedImagesRef.current = selectedImages;
   }, [selectedImages]);
 
   useEffect(() => {
+    menuImageUploadsRef.current = menuImageUploads;
+  }, [menuImageUploads]);
+
+  useEffect(() => {
     return () => {
       selectedImagesRef.current.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+      Object.values(menuImageUploadsRef.current).forEach((image) => URL.revokeObjectURL(image.previewUrl));
     };
   }, []);
 
@@ -88,6 +98,11 @@ export function ManageRestaurantPage() {
           prev.forEach((image) => URL.revokeObjectURL(image.previewUrl));
           return [];
         });
+        setMenuImageUploads((prev) => {
+          Object.values(prev).forEach((image) => URL.revokeObjectURL(image.previewUrl));
+          return {};
+        });
+        setPhotosTouched(false);
         setErrors({});
       })
       .catch(() => {
@@ -149,6 +164,27 @@ export function ManageRestaurantPage() {
         });
       }
 
+      let nextMenuItems = menuItems;
+      const menuUploadEntries = Object.entries(menuImageUploads);
+      if (menuUploadEntries.length > 0) {
+        const uploadedMenuImageUrls = await uploadRestaurantImages(
+          menuUploadEntries.map(([, image]) => image.file)
+        );
+        const uploadedImageByKey = new Map(
+          menuUploadEntries.map(([key], index) => [key, uploadedMenuImageUrls[index]])
+        );
+
+        nextMenuItems = menuItems.map((item, index) => {
+          const uploadedImage = uploadedImageByKey.get(menuItemKey(item, index));
+          return uploadedImage ? { ...item, image: uploadedImage } : item;
+        });
+        setMenuItems(nextMenuItems);
+        setMenuImageUploads((prev) => {
+          Object.values(prev).forEach((image) => URL.revokeObjectURL(image.previewUrl));
+          return {};
+        });
+      }
+
       const savedRestaurant = await updateRestaurant(restaurant.id, {
         ownerId: restaurant.ownerId,
         nameVn: formData.nameVn,
@@ -158,9 +194,9 @@ export function ManageRestaurantPage() {
         phone: formData.phone,
         description: formData.description,
         descriptionJp: formData.descriptionJp,
-        coverImage: nextImages[0] || restaurant.coverImage,
+        coverImage: nextImages[0] || (photosTouched ? "" : restaurant.coverImage),
         images: nextImages,
-        menu: menuItems.filter((item) => item.nameVn.trim()),
+        menu: nextMenuItems.filter((item) => item.nameVn.trim()),
         openHours: formData.openHours,
         priceRange: restaurant.priceRange,
         avgPrice: Number(formData.avgPrice) || 0,
@@ -173,6 +209,7 @@ export function ManageRestaurantPage() {
       setRestaurant(savedRestaurant);
       setMenuItems(savedRestaurant.menu);
       setImages(savedRestaurant.images);
+      setPhotosTouched(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
@@ -206,6 +243,16 @@ export function ManageRestaurantPage() {
   };
 
   const removeMenuItem = (index: number) => {
+    const item = menuItems[index];
+    if (item) {
+      const key = menuItemKey(item, index);
+      setMenuImageUploads((prev) => {
+        const next = { ...prev };
+        if (next[key]) URL.revokeObjectURL(next[key].previewUrl);
+        delete next[key];
+        return next;
+      });
+    }
     setMenuItems((prev) => prev.filter((_, i) => i !== index));
   };
 
@@ -242,6 +289,7 @@ export function ManageRestaurantPage() {
     }
 
     setSelectedImages((prev) => [...prev, ...nextImages]);
+    setPhotosTouched(true);
     setErrors((prev) => ({ ...prev, images: "", submit: "" }));
   };
 
@@ -251,7 +299,60 @@ export function ManageRestaurantPage() {
       if (removedImage) URL.revokeObjectURL(removedImage.previewUrl);
       return prev.filter((_, currentIndex) => currentIndex !== index);
     });
+    setPhotosTouched(true);
     setErrors((prev) => ({ ...prev, images: "" }));
+  };
+
+  const handleMenuImageSelect = (index: number, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setErrors((prev) => ({ ...prev, menuImages: t.manageStore.errorImageType, submit: "" }));
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      setErrors((prev) => ({ ...prev, menuImages: t.manageStore.errorImageSize, submit: "" }));
+      return;
+    }
+
+    const item = menuItems[index];
+    if (!item) return;
+
+    const key = menuItemKey(item, index);
+    setMenuImageUploads((prev) => {
+      const previousUpload = prev[key];
+      if (previousUpload) URL.revokeObjectURL(previousUpload.previewUrl);
+      return {
+        ...prev,
+        [key]: {
+          file,
+          previewUrl: URL.createObjectURL(file),
+        },
+      };
+    });
+    setErrors((prev) => ({ ...prev, menuImages: "", submit: "" }));
+  };
+
+  const removeMenuImage = (index: number) => {
+    const item = menuItems[index];
+    if (!item) return;
+
+    const key = menuItemKey(item, index);
+    setMenuImageUploads((prev) => {
+      const next = { ...prev };
+      if (next[key]) URL.revokeObjectURL(next[key].previewUrl);
+      delete next[key];
+      return next;
+    });
+    setMenuItems((prev) =>
+      prev.map((currentItem, currentIndex) =>
+        currentIndex === index ? { ...currentItem, image: undefined } : currentItem
+      )
+    );
+    setErrors((prev) => ({ ...prev, menuImages: "" }));
   };
 
   const toggleTag = (tag: string) => {
@@ -479,19 +580,63 @@ export function ManageRestaurantPage() {
               </div>
               <div className="space-y-3">
                 {menuItems.map((item, index) => (
-                  <div key={`${item.id}-${index}`} className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">
-                    <div className="flex-1 grid grid-cols-2 gap-2">
+                  <div key={`${item.id}-${index}`} className="flex flex-col sm:flex-row items-start gap-3 p-4 bg-gray-50 rounded-xl">
+                    <div className="w-full sm:w-28 flex-shrink-0">
+                      {(() => {
+                        const pendingImage = menuImageUploads[menuItemKey(item, index)]?.previewUrl;
+                        const imageUrl = pendingImage || item.image;
+
+                        return imageUrl ? (
+                          <div>
+                            <div className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 bg-white">
+                              <img src={imageUrl} alt={item.nameVn || t.manageStore.dishImage} className="w-full h-full object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => removeMenuImage(index)}
+                                className="absolute top-1 right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center"
+                              >
+                                <X className="w-3 h-3 text-white" />
+                              </button>
+                            </div>
+                            <label className="mt-2 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 cursor-pointer">
+                              <Upload className="w-3 h-3" />
+                              {t.manageStore.changePhoto}
+                              <input
+                                type="file"
+                                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                                onChange={(event) => handleMenuImageSelect(index, event)}
+                                className="hidden"
+                              />
+                            </label>
+                          </div>
+                        ) : (
+                          <label className="aspect-square rounded-xl border-2 border-dashed border-gray-200 bg-white flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-blue-300 hover:text-blue-400 cursor-pointer transition-colors">
+                            <Upload className="w-5 h-5" />
+                            <span className="text-xs text-center">{t.manageStore.addDishImage}</span>
+                            <input
+                              type="file"
+                              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                              onChange={(event) => handleMenuImageSelect(index, event)}
+                              className="hidden"
+                            />
+                          </label>
+                        );
+                      })()}
+                    </div>
+                    <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
                       <input
                         type="text"
                         value={item.nameVn}
                         onChange={(e) => updateMenuItem(index, "nameVn", e.target.value)}
                         className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
+                        placeholder={t.manageStore.dishNameVn}
                       />
                       <input
                         type="text"
                         value={item.nameJp}
                         onChange={(e) => updateMenuItem(index, "nameJp", e.target.value)}
                         className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
+                        placeholder={t.manageStore.dishNameJp}
                       />
                       <input
                         type="number"
@@ -518,6 +663,12 @@ export function ManageRestaurantPage() {
                   </div>
                 ))}
               </div>
+              {errors.menuImages && (
+                <p className="text-xs text-red-500 mt-3 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  {errors.menuImages}
+                </p>
+              )}
               <button
                 type="submit"
                 disabled={saving}
@@ -541,7 +692,10 @@ export function ManageRestaurantPage() {
                       <img src={img} alt={`${primaryName} ${i + 1}`} className="w-full h-full object-cover" />
                       <button
                         type="button"
-                        onClick={() => setImages(images.filter((_, index) => index !== i))}
+                        onClick={() => {
+                          setImages(images.filter((_, index) => index !== i));
+                          setPhotosTouched(true);
+                        }}
                         className="absolute top-2 right-2 w-7 h-7 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                       >
                         <X className="w-4 h-4 text-white" />

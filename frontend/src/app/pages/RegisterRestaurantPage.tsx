@@ -1,19 +1,58 @@
-import React, { useState } from "react";
-import { useNavigate, Link } from "react-router";
+import React, { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import {
   ChevronLeft, Plus, X, Upload, Clock, MapPin, Tag,
   CheckCircle, AlertCircle, DollarSign
 } from "lucide-react";
-import { createRestaurant, getFoodTags } from "../api/client";
+import { createRestaurant, getFoodTags, uploadRestaurantImages } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { useApiData } from "../hooks/useApiData";
 import { useLanguage } from "../context/LanguageContext";
+
+const MAX_RESTAURANT_IMAGES = 8;
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+interface SelectedImage {
+  file: File;
+  previewUrl: string;
+}
 
 interface MenuItemForm {
   nameVn: string;
   nameJp: string;
   price: string;
   description: string;
+  imageFile?: File;
+  imagePreviewUrl?: string;
+}
+
+const createEmptyMenuItem = (): MenuItemForm => ({
+  nameVn: "",
+  nameJp: "",
+  price: "",
+  description: "",
+});
+
+function RequiredMark() {
+  return <span className="ml-0.5 text-red-500">*</span>;
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+
+  return (
+    <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+      <AlertCircle className="w-3 h-3 flex-shrink-0" />
+      {message}
+    </p>
+  );
+}
+
+function inputClass(hasError: boolean, extra = "") {
+  return `${extra} border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors ${
+    hasError ? "border-red-300" : "border-gray-200"
+  }`;
 }
 
 export function RegisterRestaurantPage() {
@@ -21,6 +60,9 @@ export function RegisterRestaurantPage() {
   const { currentUser, isLoggedIn } = useAuth();
   const { data: foodTags } = useApiData(getFoodTags, [], []);
   const { t } = useLanguage();
+  const restaurantImageInputRef = useRef<HTMLInputElement>(null);
+  const restaurantImagesRef = useRef<SelectedImage[]>([]);
+  const menuItemsRef = useRef<MenuItemForm[]>([]);
 
   const [formData, setFormData] = useState({
     nameVn: "",
@@ -34,15 +76,29 @@ export function RegisterRestaurantPage() {
     selectedTags: [] as string[],
   });
 
-  const [menuItems, setMenuItems] = useState<MenuItemForm[]>([
-    { nameVn: "", nameJp: "", price: "", description: "" },
-  ]);
-
-  const [images, setImages] = useState<string[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItemForm[]>([createEmptyMenuItem()]);
+  const [restaurantImages, setRestaurantImages] = useState<SelectedImage[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [currentStep, setCurrentStep] = useState(1);
+
+  useEffect(() => {
+    restaurantImagesRef.current = restaurantImages;
+  }, [restaurantImages]);
+
+  useEffect(() => {
+    menuItemsRef.current = menuItems;
+  }, [menuItems]);
+
+  useEffect(() => {
+    return () => {
+      restaurantImagesRef.current.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+      menuItemsRef.current.forEach((item) => {
+        if (item.imagePreviewUrl) URL.revokeObjectURL(item.imagePreviewUrl);
+      });
+    };
+  }, []);
 
   if (!isLoggedIn || !currentUser) {
     navigate("/login");
@@ -55,22 +111,39 @@ export function RegisterRestaurantPage() {
     { num: 3, label: t.registerStore.step3 },
   ];
 
-  const sampleImages = [
-    "https://images.unsplash.com/photo-1677837914128-2367031a11e7?w=400&h=300&fit=crop",
-    "https://images.unsplash.com/photo-1761409260819-c6da12bbb2c0?w=400&h=300&fit=crop",
-    "https://images.unsplash.com/photo-1763703544688-2ac7839b0659?w=400&h=300&fit=crop",
-  ];
+  const clearError = (...keys: string[]) => {
+    setErrors((prev) => {
+      const next = { ...prev };
+      keys.forEach((key) => delete next[key]);
+      delete next.submit;
+      return next;
+    });
+  };
+
+  const updateFormField = (field: keyof typeof formData, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    clearError(field);
+  };
 
   const addMenuItem = () => {
-    setMenuItems([...menuItems, { nameVn: "", nameJp: "", price: "", description: "" }]);
+    setMenuItems((prev) => [...prev, createEmptyMenuItem()]);
+    clearError("menu");
   };
 
   const removeMenuItem = (index: number) => {
-    setMenuItems(menuItems.filter((_, i) => i !== index));
+    setMenuItems((prev) => {
+      const removedItem = prev[index];
+      if (removedItem?.imagePreviewUrl) URL.revokeObjectURL(removedItem.imagePreviewUrl);
+      return prev.filter((_, i) => i !== index);
+    });
+    setErrors({});
   };
 
   const updateMenuItem = (index: number, field: keyof MenuItemForm, value: string) => {
-    setMenuItems(menuItems.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
+    setMenuItems((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, [field]: value } : item))
+    );
+    clearError("menu", `menu.${index}.${field}`);
   };
 
   const toggleTag = (tag: string) => {
@@ -80,14 +153,160 @@ export function RegisterRestaurantPage() {
         ? prev.selectedTags.filter((t) => t !== tag)
         : [...prev.selectedTags, tag],
     }));
+    clearError("tags");
   };
 
-  const validateStep = (step: number) => {
+  const validateSelectedFiles = (files: File[], currentCount: number) => {
+    if (currentCount + files.length > MAX_RESTAURANT_IMAGES) {
+      setErrors((prev) => ({ ...prev, images: t.registerStore.errorImageCount }));
+      return null;
+    }
+
+    const nextImages: SelectedImage[] = [];
+
+    for (const file of files) {
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        nextImages.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+        setErrors((prev) => ({ ...prev, images: t.registerStore.errorImageType }));
+        return null;
+      }
+
+      if (file.size > MAX_IMAGE_SIZE_BYTES) {
+        nextImages.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+        setErrors((prev) => ({ ...prev, images: t.registerStore.errorImageSize }));
+        return null;
+      }
+
+      nextImages.push({
+        file,
+        previewUrl: URL.createObjectURL(file),
+      });
+    }
+
+    return nextImages;
+  };
+
+  const handleRestaurantImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) return;
+
+    const nextImages = validateSelectedFiles(files, restaurantImages.length);
+    if (!nextImages) return;
+
+    setRestaurantImages((prev) => [...prev, ...nextImages]);
+    clearError("images");
+  };
+
+  const removeRestaurantImage = (index: number) => {
+    setRestaurantImages((prev) => {
+      const removedImage = prev[index];
+      if (removedImage) URL.revokeObjectURL(removedImage.previewUrl);
+      return prev.filter((_, currentIndex) => currentIndex !== index);
+    });
+    clearError("images");
+  };
+
+  const handleMenuImageSelect = (index: number, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setErrors((prev) => ({ ...prev, [`menu.${index}.image`]: t.registerStore.errorImageType }));
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      setErrors((prev) => ({ ...prev, [`menu.${index}.image`]: t.registerStore.errorImageSize }));
+      return;
+    }
+
+    setMenuItems((prev) =>
+      prev.map((item, i) => {
+        if (i !== index) return item;
+        if (item.imagePreviewUrl) URL.revokeObjectURL(item.imagePreviewUrl);
+        return {
+          ...item,
+          imageFile: file,
+          imagePreviewUrl: URL.createObjectURL(file),
+        };
+      })
+    );
+    clearError("menu", `menu.${index}.image`);
+  };
+
+  const removeMenuImage = (index: number) => {
+    setMenuItems((prev) =>
+      prev.map((item, i) => {
+        if (i !== index) return item;
+        if (item.imagePreviewUrl) URL.revokeObjectURL(item.imagePreviewUrl);
+        return {
+          ...item,
+          imageFile: undefined,
+          imagePreviewUrl: undefined,
+        };
+      })
+    );
+    clearError(`menu.${index}.image`);
+  };
+
+  const getStepErrors = (step: number) => {
     const newErrors: Record<string, string> = {};
+
     if (step === 1) {
       if (!formData.nameVn.trim()) newErrors.nameVn = t.registerStore.errNameVn;
       if (!formData.nameJp.trim()) newErrors.nameJp = t.registerStore.errNameJp;
       if (!formData.address.trim()) newErrors.address = t.registerStore.errAddress;
+      if (!formData.phone.trim()) newErrors.phone = t.registerStore.errPhone;
+      if (!formData.openHours.trim()) newErrors.openHours = t.registerStore.errOpenHours;
+      if (!formData.avgPrice.trim() || Number(formData.avgPrice) <= 0) {
+        newErrors.avgPrice = t.registerStore.errAvgPrice;
+      }
+      if (!formData.description.trim()) newErrors.description = t.registerStore.errDescVn;
+      if (!formData.descriptionJp.trim()) newErrors.descriptionJp = t.registerStore.errDescJp;
+    }
+
+    if (step === 2) {
+      if (menuItems.length === 0) newErrors.menu = t.registerStore.errMenuRequired;
+
+      menuItems.forEach((item, index) => {
+        if (!item.nameVn.trim()) newErrors[`menu.${index}.nameVn`] = t.registerStore.errDishNameVn;
+        if (!item.nameJp.trim()) newErrors[`menu.${index}.nameJp`] = t.registerStore.errDishNameJp;
+        if (!item.price.trim() || Number(item.price) <= 0) {
+          newErrors[`menu.${index}.price`] = t.registerStore.errDishPrice;
+        }
+        if (!item.description.trim()) {
+          newErrors[`menu.${index}.description`] = t.registerStore.errDishDesc;
+        }
+        if (!item.imageFile) newErrors[`menu.${index}.image`] = t.registerStore.errDishImage;
+      });
+    }
+
+    if (step === 3) {
+      if (restaurantImages.length === 0) newErrors.images = t.registerStore.errImages;
+      if (formData.selectedTags.length === 0) newErrors.tags = t.registerStore.errTags;
+    }
+
+    return newErrors;
+  };
+
+  const firstInvalidStep = (newErrors: Record<string, string>) => {
+    if (["nameVn", "nameJp", "address", "phone", "openHours", "avgPrice", "description", "descriptionJp"].some((key) => newErrors[key])) {
+      return 1;
+    }
+
+    if (Object.keys(newErrors).some((key) => key === "menu" || key.startsWith("menu."))) {
+      return 2;
+    }
+
+    return 3;
+  };
+
+  const validateStep = (step: number) => {
+    const newErrors = getStepErrors(step);
+    if (Object.keys(newErrors).length > 0) {
+      newErrors.submit = t.registerStore.errRequired;
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -101,34 +320,52 @@ export function RegisterRestaurantPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateStep(1)) {
-      setCurrentStep(1);
+
+    const newErrors = {
+      ...getStepErrors(1),
+      ...getStepErrors(2),
+      ...getStepErrors(3),
+    };
+
+    if (Object.keys(newErrors).length > 0) {
+      newErrors.submit = t.registerStore.errRequired;
+      setErrors(newErrors);
+      setCurrentStep(firstInvalidStep(newErrors));
       return;
     }
 
     try {
       setSaving(true);
+      setErrors((prev) => ({ ...prev, submit: "" }));
+
+      const restaurantImageUrls = await uploadRestaurantImages(
+        restaurantImages.map((image) => image.file)
+      );
+      const menuImageUrls = await uploadRestaurantImages(
+        menuItems.map((item) => item.imageFile).filter((file): file is File => Boolean(file))
+      );
+      let menuImageIndex = 0;
+
       await createRestaurant({
         ownerId: currentUser.id,
-        nameVn: formData.nameVn,
-        nameJp: formData.nameJp,
-        address: formData.address,
-        phone: formData.phone,
-        description: formData.description,
-        descriptionJp: formData.descriptionJp,
-        coverImage: images[0],
-        images,
-        menu: menuItems
-          .filter((item) => item.nameVn.trim())
-          .map((item, index) => ({
-            id: `new-${index}`,
-            nameVn: item.nameVn,
-            nameJp: item.nameJp || item.nameVn,
-            price: Number(item.price) || 0,
-            description: item.description,
-          })),
-        openHours: formData.openHours,
-        avgPrice: Number(formData.avgPrice) || 0,
+        nameVn: formData.nameVn.trim(),
+        nameJp: formData.nameJp.trim(),
+        address: formData.address.trim(),
+        phone: formData.phone.trim(),
+        description: formData.description.trim(),
+        descriptionJp: formData.descriptionJp.trim(),
+        coverImage: restaurantImageUrls[0],
+        images: restaurantImageUrls,
+        menu: menuItems.map((item, index) => ({
+          id: `new-${index}`,
+          nameVn: item.nameVn.trim(),
+          nameJp: item.nameJp.trim(),
+          price: Number(item.price),
+          description: item.description.trim(),
+          image: menuImageUrls[menuImageIndex++],
+        })),
+        openHours: formData.openHours.trim(),
+        avgPrice: Number(formData.avgPrice),
         tags: formData.selectedTags,
         status: "closed",
         lat: 21.027764,
@@ -138,8 +375,11 @@ export function RegisterRestaurantPage() {
       setTimeout(() => {
         navigate("/owner/restaurants");
       }, 2000);
-    } catch {
-      setErrors({ submit: t.registerStore.errSubmit });
+    } catch (err) {
+      const message = err instanceof Error && err.message
+        ? err.message
+        : t.registerStore.errSubmit;
+      setErrors({ submit: message });
     } finally {
       setSaving(false);
     }
@@ -161,7 +401,6 @@ export function RegisterRestaurantPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-white border-b border-gray-100 sticky top-16 z-10">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
           <button
@@ -180,7 +419,6 @@ export function RegisterRestaurantPage() {
         <h1 className="text-gray-900 mb-2">{t.registerStore.pageTitle}</h1>
         <p className="text-sm text-gray-400 mb-8">{t.registerStore.pageSub}</p>
 
-        {/* Step indicator */}
         <div className="flex items-center gap-3 mb-8">
           {steps.map((step, i) => (
             <React.Fragment key={step.num}>
@@ -214,69 +452,56 @@ export function RegisterRestaurantPage() {
         )}
 
         <form onSubmit={handleSubmit}>
-          {/* Step 1: Basic Info */}
           {currentStep === 1 && (
             <div className="space-y-5">
               <div className="bg-white rounded-2xl border border-gray-100 p-6">
                 <h3 className="text-gray-900 mb-5">{t.registerStore.step1}</h3>
 
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm text-gray-700 mb-1.5">
-                        {t.registerStore.nameVn}<span className="text-red-400">*</span>
+                        {t.registerStore.nameVn}<RequiredMark />
                       </label>
                       <input
                         type="text"
                         value={formData.nameVn}
-                        onChange={(e) => setFormData({ ...formData, nameVn: e.target.value })}
-                        placeholder="Phở Bắc Cổ Truyền"
-                        className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors ${
-                          errors.nameVn ? "border-red-300" : "border-gray-200"
-                        }`}
+                        onChange={(e) => updateFormField("nameVn", e.target.value)}
+                        placeholder="Pho Bac Co Truyen"
+                        className={inputClass(Boolean(errors.nameVn), "w-full px-3 py-2.5")}
                       />
-                      {errors.nameVn && (
-                        <p className="text-xs text-red-500 mt-1">{errors.nameVn}</p>
-                      )}
+                      <FieldError message={errors.nameVn} />
                     </div>
                     <div>
                       <label className="block text-sm text-gray-700 mb-1.5">
-                        {t.registerStore.nameJp}<span className="text-red-400">*</span>
+                        {t.registerStore.nameJp}<RequiredMark />
                       </label>
                       <input
                         type="text"
                         value={formData.nameJp}
-                        onChange={(e) => setFormData({ ...formData, nameJp: e.target.value })}
-                        placeholder="バックコー伝統フォー"
-                        className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors ${
-                          errors.nameJp ? "border-red-300" : "border-gray-200"
-                        }`}
+                        onChange={(e) => updateFormField("nameJp", e.target.value)}
+                        placeholder="フォー専門店"
+                        className={inputClass(Boolean(errors.nameJp), "w-full px-3 py-2.5")}
                       />
-                      {errors.nameJp && (
-                        <p className="text-xs text-red-500 mt-1">{errors.nameJp}</p>
-                      )}
+                      <FieldError message={errors.nameJp} />
                     </div>
                   </div>
 
                   <div>
                     <label className="block text-sm text-gray-700 mb-1.5">
-                      {t.registerStore.address}<span className="text-red-400">*</span>
+                      {t.registerStore.address}<RequiredMark />
                     </label>
                     <div className="relative">
                       <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <input
                         type="text"
                         value={formData.address}
-                        onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                        placeholder="12 Hàng Bún, Hoàn Kiếm, Hà Nội"
-                        className={`w-full pl-10 pr-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors ${
-                          errors.address ? "border-red-300" : "border-gray-200"
-                        }`}
+                        onChange={(e) => updateFormField("address", e.target.value)}
+                        placeholder="12 Hang Bun, Hoan Kiem, Ha Noi"
+                        className={inputClass(Boolean(errors.address), "w-full pl-10 pr-4 py-2.5")}
                       />
                     </div>
-                    {errors.address && (
-                      <p className="text-xs text-red-500 mt-1">{errors.address}</p>
-                    )}
+                    <FieldError message={errors.address} />
                     <button
                       type="button"
                       className="mt-2 text-xs text-blue-500 hover:text-blue-600 flex items-center gap-1"
@@ -287,65 +512,77 @@ export function RegisterRestaurantPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-700 mb-1.5">{t.registerStore.phone}</label>
+                    <label className="block text-sm text-gray-700 mb-1.5">
+                      {t.registerStore.phone}<RequiredMark />
+                    </label>
                     <input
                       type="tel"
                       value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      onChange={(e) => updateFormField("phone", e.target.value)}
                       placeholder="024 3826 1011"
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors"
+                      className={inputClass(Boolean(errors.phone), "w-full px-3 py-2.5")}
                     />
+                    <FieldError message={errors.phone} />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm text-gray-700 mb-1.5">
                         <Clock className="inline w-4 h-4 mr-1" />
-                        {t.registerStore.openHours}
+                        {t.registerStore.openHours}<RequiredMark />
                       </label>
                       <input
                         type="text"
                         value={formData.openHours}
-                        onChange={(e) => setFormData({ ...formData, openHours: e.target.value })}
+                        onChange={(e) => updateFormField("openHours", e.target.value)}
                         placeholder="10:00 - 21:00"
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors"
+                        className={inputClass(Boolean(errors.openHours), "w-full px-3 py-2.5")}
                       />
+                      <FieldError message={errors.openHours} />
                     </div>
                     <div>
                       <label className="block text-sm text-gray-700 mb-1.5">
                         <DollarSign className="inline w-4 h-4 mr-1" />
-                        {t.registerStore.avgPrice}
+                        {t.registerStore.avgPrice}<RequiredMark />
                       </label>
                       <input
                         type="number"
                         value={formData.avgPrice}
-                        onChange={(e) => setFormData({ ...formData, avgPrice: e.target.value })}
+                        onChange={(e) => updateFormField("avgPrice", e.target.value)}
                         placeholder="65000"
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors"
+                        min="1"
+                        className={inputClass(Boolean(errors.avgPrice), "w-full px-3 py-2.5")}
                       />
+                      <FieldError message={errors.avgPrice} />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-700 mb-1.5">{t.registerStore.descVn}</label>
+                    <label className="block text-sm text-gray-700 mb-1.5">
+                      {t.registerStore.descVn}<RequiredMark />
+                    </label>
                     <textarea
                       value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      onChange={(e) => updateFormField("description", e.target.value)}
                       placeholder={t.registerStore.descVnPh}
                       rows={3}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors resize-none"
+                      className={inputClass(Boolean(errors.description), "w-full px-3 py-2.5 resize-none")}
                     />
+                    <FieldError message={errors.description} />
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-700 mb-1.5">{t.registerStore.descJp}</label>
+                    <label className="block text-sm text-gray-700 mb-1.5">
+                      {t.registerStore.descJp}<RequiredMark />
+                    </label>
                     <textarea
                       value={formData.descriptionJp}
-                      onChange={(e) => setFormData({ ...formData, descriptionJp: e.target.value })}
+                      onChange={(e) => updateFormField("descriptionJp", e.target.value)}
                       placeholder={t.registerStore.descJpPh}
                       rows={3}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors resize-none"
+                      className={inputClass(Boolean(errors.descriptionJp), "w-full px-3 py-2.5 resize-none")}
                     />
+                    <FieldError message={errors.descriptionJp} />
                   </div>
                 </div>
               </div>
@@ -361,7 +598,6 @@ export function RegisterRestaurantPage() {
             </div>
           )}
 
-          {/* Step 2: Menu */}
           {currentStep === 2 && (
             <div className="space-y-5">
               <div className="bg-white rounded-2xl border border-gray-100 p-6">
@@ -376,6 +612,7 @@ export function RegisterRestaurantPage() {
                     {t.registerStore.addBtn}
                   </button>
                 </div>
+                <FieldError message={errors.menu} />
 
                 <div className="space-y-4">
                   {menuItems.map((item, index) => (
@@ -390,37 +627,97 @@ export function RegisterRestaurantPage() {
                         </button>
                       )}
                       <p className="text-xs text-gray-500 mb-3">{t.registerStore.menuLabel} {index + 1}</p>
-                      <div className="grid grid-cols-2 gap-3 mb-3">
-                        <input
-                          type="text"
-                          value={item.nameVn}
-                          onChange={(e) => updateMenuItem(index, "nameVn", e.target.value)}
-                          placeholder={t.registerStore.dishNameVn}
-                          className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
-                        />
-                        <input
-                          type="text"
-                          value={item.nameJp}
-                          onChange={(e) => updateMenuItem(index, "nameJp", e.target.value)}
-                          placeholder={t.registerStore.dishNameJp}
-                          className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <input
-                          type="number"
-                          value={item.price}
-                          onChange={(e) => updateMenuItem(index, "price", e.target.value)}
-                          placeholder={t.registerStore.price}
-                          className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
-                        />
-                        <input
-                          type="text"
-                          value={item.description}
-                          onChange={(e) => updateMenuItem(index, "description", e.target.value)}
-                          placeholder={t.registerStore.dishDesc}
-                          className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
-                        />
+
+                      <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr] gap-4">
+                        <div>
+                          <label className="block text-sm text-gray-700 mb-1.5">
+                            {t.registerStore.dishImage}<RequiredMark />
+                          </label>
+                          {item.imagePreviewUrl ? (
+                            <div className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 bg-white">
+                              <img src={item.imagePreviewUrl} alt={item.nameVn || t.registerStore.dishImage} className="w-full h-full object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => removeMenuImage(index)}
+                                className="absolute top-1 right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center"
+                              >
+                                <X className="w-3 h-3 text-white" />
+                              </button>
+                            </div>
+                          ) : (
+                            <label className={`aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors bg-white ${
+                              errors[`menu.${index}.image`]
+                                ? "border-red-300 text-red-400"
+                                : "border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-400"
+                            }`}>
+                              <Upload className="w-6 h-6" />
+                              <span className="text-xs text-center">{t.registerStore.addDishImage}</span>
+                              <input
+                                type="file"
+                                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                                onChange={(e) => handleMenuImageSelect(index, e)}
+                                className="hidden"
+                              />
+                            </label>
+                          )}
+                          <FieldError message={errors[`menu.${index}.image`]} />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-sm text-gray-700 mb-1.5">
+                              {t.registerStore.dishNameVn}<RequiredMark />
+                            </label>
+                            <input
+                              type="text"
+                              value={item.nameVn}
+                              onChange={(e) => updateMenuItem(index, "nameVn", e.target.value)}
+                              placeholder={t.registerStore.dishNameVn}
+                              className={inputClass(Boolean(errors[`menu.${index}.nameVn`]), "w-full px-3 py-2")}
+                            />
+                            <FieldError message={errors[`menu.${index}.nameVn`]} />
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-700 mb-1.5">
+                              {t.registerStore.dishNameJp}<RequiredMark />
+                            </label>
+                            <input
+                              type="text"
+                              value={item.nameJp}
+                              onChange={(e) => updateMenuItem(index, "nameJp", e.target.value)}
+                              placeholder={t.registerStore.dishNameJp}
+                              className={inputClass(Boolean(errors[`menu.${index}.nameJp`]), "w-full px-3 py-2")}
+                            />
+                            <FieldError message={errors[`menu.${index}.nameJp`]} />
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-700 mb-1.5">
+                              {t.registerStore.price}<RequiredMark />
+                            </label>
+                            <input
+                              type="number"
+                              value={item.price}
+                              onChange={(e) => updateMenuItem(index, "price", e.target.value)}
+                              placeholder={t.registerStore.price}
+                              min="1"
+                              className={inputClass(Boolean(errors[`menu.${index}.price`]), "w-full px-3 py-2")}
+                            />
+                            <FieldError message={errors[`menu.${index}.price`]} />
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-700 mb-1.5">
+                              {t.registerStore.dishDesc}<RequiredMark />
+                            </label>
+                            <input
+                              type="text"
+                              value={item.description}
+                              onChange={(e) => updateMenuItem(index, "description", e.target.value)}
+                              placeholder={t.registerStore.dishDesc}
+                              className={inputClass(Boolean(errors[`menu.${index}.description`]), "w-full px-3 py-2")}
+                            />
+                            <FieldError message={errors[`menu.${index}.description`]} />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -447,48 +744,58 @@ export function RegisterRestaurantPage() {
             </div>
           )}
 
-          {/* Step 3: Photos & Tags */}
           {currentStep === 3 && (
             <div className="space-y-5">
-              {/* Photos */}
               <div className="bg-white rounded-2xl border border-gray-100 p-6">
-                <h3 className="text-gray-900 mb-1">{t.registerStore.photoTitle}</h3>
+                <h3 className="text-gray-900 mb-1">
+                  {t.registerStore.photoTitle}<RequiredMark />
+                </h3>
                 <p className="text-sm text-gray-400 mb-5">{t.registerStore.photoSub}</p>
-                <div className="grid grid-cols-3 gap-3">
-                  {images.map((img, i) => (
-                    <div key={i} className="aspect-video rounded-xl overflow-hidden relative group">
-                      <img src={img} alt="upload" className="w-full h-full object-cover" />
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {restaurantImages.map((image, i) => (
+                    <div key={image.previewUrl} className="aspect-video rounded-xl overflow-hidden relative group">
+                      <img src={image.previewUrl} alt={image.file.name} className="w-full h-full object-cover" />
                       <button
                         type="button"
-                        onClick={() => setImages(images.filter((_, idx) => idx !== i))}
+                        onClick={() => removeRestaurantImage(i)}
                         className="absolute top-1 right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                       >
                         <X className="w-3 h-3 text-white" />
                       </button>
                     </div>
                   ))}
-                  {images.length < 8 && (
+                  {restaurantImages.length < MAX_RESTAURANT_IMAGES && (
                     <button
                       type="button"
-                      onClick={() => {
-                        if (images.length < 8) {
-                          setImages([...images, sampleImages[images.length % sampleImages.length]]);
-                        }
-                      }}
-                      className="aspect-video rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-blue-300 hover:text-blue-400 transition-colors"
+                      onClick={() => restaurantImageInputRef.current?.click()}
+                      className={`aspect-video rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2 transition-colors ${
+                        errors.images
+                          ? "border-red-300 text-red-400"
+                          : "border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-400"
+                      }`}
                     >
                       <Upload className="w-6 h-6" />
                       <span className="text-xs">{t.registerStore.addPhoto}</span>
                     </button>
                   )}
                 </div>
+                <input
+                  ref={restaurantImageInputRef}
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                  multiple
+                  onChange={handleRestaurantImageSelect}
+                  className="hidden"
+                />
+                <FieldError message={errors.images} />
               </div>
 
-              {/* Tags */}
               <div className="bg-white rounded-2xl border border-gray-100 p-6">
                 <div className="flex items-center gap-2 mb-1">
                   <Tag className="w-4 h-4 text-blue-400" />
-                  <h3 className="text-gray-900">{t.registerStore.tagTitle}</h3>
+                  <h3 className="text-gray-900">
+                    {t.registerStore.tagTitle}<RequiredMark />
+                  </h3>
                 </div>
                 <p className="text-sm text-gray-400 mb-4">{t.registerStore.tagSub}</p>
                 <div className="flex flex-wrap gap-2">
@@ -507,6 +814,7 @@ export function RegisterRestaurantPage() {
                     </button>
                   ))}
                 </div>
+                <FieldError message={errors.tags} />
               </div>
 
               <div className="flex gap-3">
@@ -520,10 +828,10 @@ export function RegisterRestaurantPage() {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="flex-1 py-3 text-white rounded-xl text-sm transition-all hover:opacity-90"
+                  className="flex-1 py-3 text-white rounded-xl text-sm transition-all hover:opacity-90 disabled:opacity-60"
                   style={{ background: "linear-gradient(135deg, #0066CC 0%, #004499 100%)" }}
                 >
-                  {t.registerStore.submitBtn}
+                  {saving ? t.registerStore.saving : t.registerStore.submitBtn}
                 </button>
               </div>
             </div>
