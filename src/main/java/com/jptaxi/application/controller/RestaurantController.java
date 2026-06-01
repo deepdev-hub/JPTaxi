@@ -195,14 +195,19 @@ public class RestaurantController {
 
     @PostMapping
     @Transactional
-    public ResponseEntity<RestaurantDto> createRestaurant(@RequestBody SaveRestaurantRequest request) {
+    public ResponseEntity<?> createRestaurant(@RequestBody SaveRestaurantRequest request) {
+        String validationError = validateCreateRestaurantRequest(request);
+        if (validationError != null) {
+            return badRequest(validationError);
+        }
+
         if (request.ownerId() == null || request.ownerId().isBlank()) {
-            return ResponseEntity.badRequest().build();
+            return badRequest("Owner is required");
         }
 
         User owner = userRepository.findById(request.ownerId()).orElse(null);
         if (owner == null) {
-            return ResponseEntity.badRequest().build();
+            return badRequest("Owner is invalid");
         }
 
         Restaurant restaurant = new Restaurant();
@@ -211,6 +216,43 @@ public class RestaurantController {
         applyRestaurantRequest(restaurant, request);
 
         return ResponseEntity.ok(mapper.toRestaurantDto(restaurantRepository.save(restaurant)));
+    }
+
+    private String validateCreateRestaurantRequest(SaveRestaurantRequest request) {
+        if (request == null) return "Restaurant data is required";
+        if (isBlank(request.nameVn())) return "Restaurant Vietnamese name is required";
+        if (isBlank(request.nameJp())) return "Restaurant Japanese name is required";
+        if (isBlank(request.address())) return "Restaurant address is required";
+        if (isBlank(request.phone())) return "Restaurant phone is required";
+        if (isBlank(request.description())) return "Restaurant Vietnamese description is required";
+        if (isBlank(request.descriptionJp())) return "Restaurant Japanese description is required";
+        if (isBlank(request.openHours())) return "Restaurant open hours are required";
+        if (request.avgPrice() == null || request.avgPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            return "Restaurant average price must be greater than 0";
+        }
+        if (request.images() == null || request.images().stream().noneMatch(image -> !isBlank(image))) {
+            return "At least one restaurant image is required";
+        }
+        if (request.tags() == null || request.tags().stream().noneMatch(tag -> !isBlank(tag))) {
+            return "At least one restaurant tag is required";
+        }
+        if (request.menu() == null || request.menu().isEmpty()) {
+            return "At least one menu item is required";
+        }
+
+        for (int index = 0; index < request.menu().size(); index++) {
+            MenuItemDto item = request.menu().get(index);
+            if (item == null) return "Menu item data is required";
+            if (isBlank(item.nameVn())) return "Menu item Vietnamese name is required";
+            if (isBlank(item.nameJp())) return "Menu item Japanese name is required";
+            if (item.price() == null || item.price().compareTo(BigDecimal.ZERO) <= 0) {
+                return "Menu item price must be greater than 0";
+            }
+            if (isBlank(item.description())) return "Menu item description is required";
+            if (isBlank(item.image())) return "Menu item image is required";
+        }
+
+        return null;
     }
 
     @PutMapping("/{id}")
@@ -431,6 +473,10 @@ public class RestaurantController {
 
     private String valueOrDefault(String value, String defaultValue) {
         return value == null || value.isBlank() ? defaultValue : value.trim();
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private String firstNonBlank(List<String> values) {

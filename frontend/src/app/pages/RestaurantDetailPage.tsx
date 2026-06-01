@@ -413,6 +413,11 @@ export function RestaurantDetailPage() {
                   {restaurant.menu.map((item) => (
                     <div key={item.id} className="p-4 border border-gray-100 rounded-xl hover:bg-gray-50 transition-all">
                       <div className="flex items-start justify-between gap-3">
+                        {item.image && (
+                          <div className="w-24 h-24 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
+                            <img src={item.image} alt={item.nameVn} className="w-full h-full object-cover" />
+                          </div>
+                        )}
                         <div className="flex-1">
                           <h4 className="text-gray-900">{item.nameJp}</h4>
                           <p className="text-sm text-gray-500 mt-0.5">{item.nameVn}</p>

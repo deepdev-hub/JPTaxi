@@ -1,49 +1,127 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router";
+import React, { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import {
-  ChevronLeft, Plus, X, Upload, Clock, MapPin, Tag,
-  CheckCircle, AlertCircle, DollarSign, Search
+  AlertCircle,
+  CheckCircle,
+  ChevronLeft,
+  Clock,
+  DollarSign,
+  MapPin,
+  Plus,
+  Search,
+  Tag,
+  Upload,
+  X,
 } from "lucide-react";
-import { createRestaurant, getFoodTags, uploadMenuImage } from "../api/client";
-import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
-import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-
-// Fix leaflet marker icon issue in Vite
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-});
-
-// Thành phần hỗ trợ click trên bản đồ
-function MapEvents({ onLocationSelect }: { onLocationSelect: (lat: number, lng: number) => void }) {
-  useMapEvents({
-    click(e) {
-      onLocationSelect(e.latlng.lat, e.latlng.lng);
-    },
-  });
-  return null;
-}
-
-// Thành phần hỗ trợ di chuyển bản đồ đến điểm mới
-function MapUpdater({ center }: { center: {lat: number, lng: number} }) {
-  const map = useMap();
-  map.flyTo([center.lat, center.lng], map.getZoom());
-  return null;
-}
+import "leaflet/dist/leaflet.css";
+import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import { createRestaurant, getFoodTags, uploadRestaurantImages } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { useApiData } from "../hooks/useApiData";
 import { useLanguage } from "../context/LanguageContext";
+
+const MAX_RESTAURANT_IMAGES = 8;
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const DEFAULT_LOCATION = { lat: 21.027764, lng: 105.83416 };
+
+delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
+  iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+});
+
+interface SelectedImage {
+  file: File;
+  previewUrl: string;
+}
 
 interface MenuItemForm {
   nameVn: string;
   nameJp: string;
   price: string;
   description: string;
-  image?: string;
-  isUploadingImage?: boolean;
+  imageFile?: File;
+  imagePreviewUrl?: string;
+}
+
+interface RestaurantFormData {
+  nameVn: string;
+  nameJp: string;
+  address: string;
+  phone: string;
+  description: string;
+  descriptionJp: string;
+  openHours: string;
+  avgPrice: string;
+  selectedTags: string[];
+}
+
+interface LatLng {
+  lat: number;
+  lng: number;
+}
+
+interface NominatimSuggestion {
+  lat: string;
+  lon: string;
+  display_name: string;
+}
+
+type TextFormField = Exclude<keyof RestaurantFormData, "selectedTags">;
+
+const createEmptyMenuItem = (): MenuItemForm => ({
+  nameVn: "",
+  nameJp: "",
+  price: "",
+  description: "",
+});
+
+function RequiredMark() {
+  return <span className="ml-0.5 text-red-500">*</span>;
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+
+  return (
+    <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+      <AlertCircle className="w-3 h-3 flex-shrink-0" />
+      {message}
+    </p>
+  );
+}
+
+function inputClass(hasError: boolean, extra = "") {
+  return `${extra} border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors ${
+    hasError ? "border-red-300" : "border-gray-200"
+  }`;
+}
+
+function digitsOnly(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function MapEvents({ onLocationSelect }: { onLocationSelect: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(event) {
+      onLocationSelect(event.latlng.lat, event.latlng.lng);
+    },
+  });
+
+  return null;
+}
+
+function MapUpdater({ center }: { center: LatLng }) {
+  const map = useMap();
+
+  useEffect(() => {
+    map.flyTo([center.lat, center.lng], map.getZoom());
+  }, [center.lat, center.lng, map]);
+
+  return null;
 }
 
 export function RegisterRestaurantPage() {
@@ -51,8 +129,11 @@ export function RegisterRestaurantPage() {
   const { currentUser, isLoggedIn } = useAuth();
   const { data: foodTags } = useApiData(getFoodTags, [], []);
   const { t } = useLanguage();
+  const restaurantImageInputRef = useRef<HTMLInputElement>(null);
+  const restaurantImagesRef = useRef<SelectedImage[]>([]);
+  const menuItemsRef = useRef<MenuItemForm[]>([]);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<RestaurantFormData>({
     nameVn: "",
     nameJp: "",
     address: "",
@@ -61,37 +142,93 @@ export function RegisterRestaurantPage() {
     descriptionJp: "",
     openHours: "10:00 - 21:00",
     avgPrice: "",
-    selectedTags: [] as string[],
+    selectedTags: [],
   });
-
-  const [menuItems, setMenuItems] = useState<MenuItemForm[]>([
-    { nameVn: "", nameJp: "", price: "", description: "" },
-  ]);
-
-  const [images, setImages] = useState<string[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItemForm[]>([createEmptyMenuItem()]);
+  const [restaurantImages, setRestaurantImages] = useState<SelectedImage[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [currentStep, setCurrentStep] = useState(1);
   const [showMapModal, setShowMapModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [mapCenter, setMapCenter] = useState<{lat: number, lng: number}>({ lat: 21.027764, lng: 105.83416 });
-  const [selectedLocation, setSelectedLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [suggestions, setSuggestions] = useState<NominatimSuggestion[]>([]);
+  const [mapCenter, setMapCenter] = useState<LatLng>(DEFAULT_LOCATION);
+  const [selectedLocation, setSelectedLocation] = useState<LatLng | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
 
-  const handleNumericInput = (value: string, setter: (val: string) => void) => {
-    if (/[^\d]/.test(value)) {
-      alert("Vui lòng chỉ nhập số, không nhập chữ hay ký tự đặc biệt!");
-      setter(value.replace(/[^\d]/g, ""));
-    } else {
-      setter(value);
+  const clearError = (...keys: string[]) => {
+    setErrors((prev) => {
+      const next = { ...prev };
+      keys.forEach((key) => delete next[key]);
+      delete next.submit;
+      return next;
+    });
+  };
+
+  const updateFormField = (field: TextFormField, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    clearError(field);
+  };
+
+  const updateNumericField = (field: "phone" | "avgPrice", value: string) => {
+    updateFormField(field, digitsOnly(value));
+  };
+
+  const handleSearchAddress = async (query: string) => {
+    setIsSearching(true);
+    setHasSearched(false);
+
+    try {
+      const fetchSuggestions = async (searchText: string) => {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchText)}&limit=5&countrycodes=vn`
+        );
+
+        return response.ok ? ((await response.json()) as NominatimSuggestion[]) : [];
+      };
+
+      let results = await fetchSuggestions(query);
+      const normalizedQuery = query.toLowerCase();
+
+      if (
+        results.length === 0 &&
+        !normalizedQuery.includes("ha noi") &&
+        !normalizedQuery.includes("hanoi") &&
+        !normalizedQuery.includes("hà nội")
+      ) {
+        results = await fetchSuggestions(`${query}, Ha Noi`);
+      }
+
+      setSuggestions(results);
+    } catch (error) {
+      console.error("Error fetching location", error);
+      setSuggestions([]);
+    } finally {
+      setIsSearching(false);
+      setHasSearched(true);
+    }
+  };
+
+  const handleMapClick = async (lat: number, lng: number) => {
+    const nextLocation = { lat, lng };
+    setSelectedLocation(nextLocation);
+    setMapCenter(nextLocation);
+
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+      );
+      const data = await response.json();
+      if (data?.display_name) setSearchQuery(data.display_name);
+    } catch (error) {
+      console.error("Error reverse geocoding", error);
     }
   };
 
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
+    const timeoutId = window.setTimeout(() => {
       if (searchQuery.trim().length > 2) {
         handleSearchAddress(searchQuery.trim());
       } else {
@@ -100,8 +237,25 @@ export function RegisterRestaurantPage() {
       }
     }, 800);
 
-    return () => clearTimeout(delayDebounceFn);
+    return () => window.clearTimeout(timeoutId);
   }, [searchQuery]);
+
+  useEffect(() => {
+    restaurantImagesRef.current = restaurantImages;
+  }, [restaurantImages]);
+
+  useEffect(() => {
+    menuItemsRef.current = menuItems;
+  }, [menuItems]);
+
+  useEffect(() => {
+    return () => {
+      restaurantImagesRef.current.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+      menuItemsRef.current.forEach((item) => {
+        if (item.imagePreviewUrl) URL.revokeObjectURL(item.imagePreviewUrl);
+      });
+    };
+  }, []);
 
   if (!isLoggedIn || !currentUser) {
     navigate("/login");
@@ -114,139 +268,272 @@ export function RegisterRestaurantPage() {
     { num: 3, label: t.registerStore.step3 },
   ];
 
-  const sampleImages = [
-    "https://images.unsplash.com/photo-1677837914128-2367031a11e7?w=400&h=300&fit=crop",
-    "https://images.unsplash.com/photo-1761409260819-c6da12bbb2c0?w=400&h=300&fit=crop",
-    "https://images.unsplash.com/photo-1763703544688-2ac7839b0659?w=400&h=300&fit=crop",
-  ];
-
   const addMenuItem = () => {
-    setMenuItems([...menuItems, { nameVn: "", nameJp: "", price: "", description: "" }]);
+    setMenuItems((prev) => [...prev, createEmptyMenuItem()]);
+    clearError("menu");
   };
 
   const removeMenuItem = (index: number) => {
-    setMenuItems(menuItems.filter((_, i) => i !== index));
+    setMenuItems((prev) => {
+      const removedItem = prev[index];
+      if (removedItem?.imagePreviewUrl) URL.revokeObjectURL(removedItem.imagePreviewUrl);
+      return prev.filter((_, currentIndex) => currentIndex !== index);
+    });
+    setErrors({});
   };
 
-  const updateMenuItem = (index: number, field: string, value: any) => {
-    setMenuItems(prev => prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
+  const updateMenuItem = (index: number, field: keyof MenuItemForm, value: string) => {
+    setMenuItems((prev) =>
+      prev.map((item, currentIndex) =>
+        currentIndex === index ? { ...item, [field]: value } : item
+      )
+    );
+    clearError("menu", `menu.${index}.${field}`);
   };
 
   const toggleTag = (tag: string) => {
     setFormData((prev) => ({
       ...prev,
       selectedTags: prev.selectedTags.includes(tag)
-        ? prev.selectedTags.filter((t) => t !== tag)
+        ? prev.selectedTags.filter((currentTag) => currentTag !== tag)
         : [...prev.selectedTags, tag],
     }));
+    clearError("tags");
   };
 
-  const validateStep = (step: number) => {
+  const validateSelectedFiles = (files: File[], currentCount: number) => {
+    if (currentCount + files.length > MAX_RESTAURANT_IMAGES) {
+      setErrors((prev) => ({ ...prev, images: t.registerStore.errorImageCount }));
+      return null;
+    }
+
+    const nextImages: SelectedImage[] = [];
+
+    for (const file of files) {
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        nextImages.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+        setErrors((prev) => ({ ...prev, images: t.registerStore.errorImageType }));
+        return null;
+      }
+
+      if (file.size > MAX_IMAGE_SIZE_BYTES) {
+        nextImages.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+        setErrors((prev) => ({ ...prev, images: t.registerStore.errorImageSize }));
+        return null;
+      }
+
+      nextImages.push({
+        file,
+        previewUrl: URL.createObjectURL(file),
+      });
+    }
+
+    return nextImages;
+  };
+
+  const handleRestaurantImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) return;
+
+    const nextImages = validateSelectedFiles(files, restaurantImages.length);
+    if (!nextImages) return;
+
+    setRestaurantImages((prev) => [...prev, ...nextImages]);
+    clearError("images");
+  };
+
+  const removeRestaurantImage = (index: number) => {
+    setRestaurantImages((prev) => {
+      const removedImage = prev[index];
+      if (removedImage) URL.revokeObjectURL(removedImage.previewUrl);
+      return prev.filter((_, currentIndex) => currentIndex !== index);
+    });
+    clearError("images");
+  };
+
+  const handleMenuImageSelect = (index: number, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setErrors((prev) => ({ ...prev, [`menu.${index}.image`]: t.registerStore.errorImageType }));
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      setErrors((prev) => ({ ...prev, [`menu.${index}.image`]: t.registerStore.errorImageSize }));
+      return;
+    }
+
+    setMenuItems((prev) =>
+      prev.map((item, currentIndex) => {
+        if (currentIndex !== index) return item;
+        if (item.imagePreviewUrl) URL.revokeObjectURL(item.imagePreviewUrl);
+
+        return {
+          ...item,
+          imageFile: file,
+          imagePreviewUrl: URL.createObjectURL(file),
+        };
+      })
+    );
+    clearError("menu", `menu.${index}.image`);
+  };
+
+  const removeMenuImage = (index: number) => {
+    setMenuItems((prev) =>
+      prev.map((item, currentIndex) => {
+        if (currentIndex !== index) return item;
+        if (item.imagePreviewUrl) URL.revokeObjectURL(item.imagePreviewUrl);
+
+        return {
+          ...item,
+          imageFile: undefined,
+          imagePreviewUrl: undefined,
+        };
+      })
+    );
+    clearError(`menu.${index}.image`);
+  };
+
+  const getStepErrors = (step: number) => {
     const newErrors: Record<string, string> = {};
+
     if (step === 1) {
       if (!formData.nameVn.trim()) newErrors.nameVn = t.registerStore.errNameVn;
       if (!formData.nameJp.trim()) newErrors.nameJp = t.registerStore.errNameJp;
       if (!formData.address.trim()) newErrors.address = t.registerStore.errAddress;
       if (!formData.phone.trim()) newErrors.phone = t.registerStore.errPhone;
       if (!formData.openHours.trim()) newErrors.openHours = t.registerStore.errOpenHours;
-      if (!formData.avgPrice.toString().trim()) newErrors.avgPrice = t.registerStore.errAvgPrice;
+      if (!formData.avgPrice.trim() || Number(formData.avgPrice) <= 0) {
+        newErrors.avgPrice = t.registerStore.errAvgPrice;
+      }
       if (!formData.description.trim()) newErrors.description = t.registerStore.errDescVn;
       if (!formData.descriptionJp.trim()) newErrors.descriptionJp = t.registerStore.errDescJp;
+    }
+
+    if (step === 2) {
+      if (menuItems.length === 0) newErrors.menu = t.registerStore.errMenuRequired;
+
+      menuItems.forEach((item, index) => {
+        if (!item.nameVn.trim()) newErrors[`menu.${index}.nameVn`] = t.registerStore.errDishNameVn;
+        if (!item.nameJp.trim()) newErrors[`menu.${index}.nameJp`] = t.registerStore.errDishNameJp;
+        if (!item.price.trim() || Number(item.price) <= 0) {
+          newErrors[`menu.${index}.price`] = t.registerStore.errDishPrice;
+        }
+        if (!item.description.trim()) {
+          newErrors[`menu.${index}.description`] = t.registerStore.errDishDesc;
+        }
+        if (!item.imageFile) newErrors[`menu.${index}.image`] = t.registerStore.errDishImage;
+      });
+    }
+
+    if (step === 3) {
+      if (restaurantImages.length === 0) newErrors.images = t.registerStore.errImages;
+      if (formData.selectedTags.length === 0) newErrors.tags = t.registerStore.errTags;
+    }
+
+    return newErrors;
+  };
+
+  const firstInvalidStep = (newErrors: Record<string, string>) => {
+    const basicFields = [
+      "nameVn",
+      "nameJp",
+      "address",
+      "phone",
+      "openHours",
+      "avgPrice",
+      "description",
+      "descriptionJp",
+    ];
+
+    if (basicFields.some((key) => newErrors[key])) return 1;
+    if (Object.keys(newErrors).some((key) => key === "menu" || key.startsWith("menu."))) return 2;
+    return 3;
+  };
+
+  const validateStep = (step: number) => {
+    const newErrors = getStepErrors(step);
+    if (Object.keys(newErrors).length > 0) {
+      newErrors.submit = t.registerStore.errRequired;
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleNext = () => {
-    if (validateStep(currentStep)) {
-      setCurrentStep(currentStep + 1);
-    }
+    if (validateStep(currentStep)) setCurrentStep(currentStep + 1);
   };
 
-  const handleSearchAddress = async (query: string) => {
-    setIsSearching(true);
-    setHasSearched(false);
-    try {
-      let results = [];
-      // Lần 1: Tìm kiếm chính xác những gì user gõ
-      let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&countrycodes=vn`);
-      if (res.ok) {
-        results = await res.json();
-      }
-      
-      // Lần 2: Nếu không tìm thấy, thử thêm chữ "Hà Nội" để OpenStreetMap dễ nhận diện hơn (OSM rất khó tính với số nhà thiếu tên thành phố)
-      if (results.length === 0 && !query.toLowerCase().includes('hà nội') && !query.toLowerCase().includes('hanoi')) {
-        res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Hà Nội')}&limit=5&countrycodes=vn`);
-        if (res.ok) {
-          results = await res.json();
-        }
-      }
-      
-      setSuggestions(results || []);
-    } catch (error) {
-      console.error("Error fetching location", error);
-      setSuggestions([]);
-    } finally {
-      setIsSearching(false);
-      setHasSearched(true);
-    }
+  const confirmSelectedAddress = () => {
+    updateFormField("address", searchQuery);
+    setShowMapModal(false);
   };
 
-  const handleMapClick = async (lat: number, lng: number) => {
-    setSelectedLocation({ lat, lng });
-    try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
-      const data = await res.json();
-      if (data && data.display_name) {
-        setSearchQuery(data.display_name);
-      }
-    } catch (error) {
-      console.error("Error reverse geocoding", error);
-    }
-  };
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validateStep(1)) {
-      setCurrentStep(1);
+    const newErrors = {
+      ...getStepErrors(1),
+      ...getStepErrors(2),
+      ...getStepErrors(3),
+    };
+
+    if (Object.keys(newErrors).length > 0) {
+      newErrors.submit = t.registerStore.errRequired;
+      setErrors(newErrors);
+      setCurrentStep(firstInvalidStep(newErrors));
       return;
     }
 
     try {
       setSaving(true);
+      setErrors((prev) => ({ ...prev, submit: "" }));
+
+      const restaurantImageUrls = await uploadRestaurantImages(
+        restaurantImages.map((image) => image.file)
+      );
+      const menuImageUrls = await uploadRestaurantImages(
+        menuItems.map((item) => item.imageFile).filter((file): file is File => Boolean(file))
+      );
+      let menuImageIndex = 0;
+
       await createRestaurant({
         ownerId: currentUser.id,
-        nameVn: formData.nameVn,
-        nameJp: formData.nameJp,
-        address: formData.address,
-        phone: formData.phone,
-        description: formData.description,
-        descriptionJp: formData.descriptionJp,
-        coverImage: images[0],
-        images,
-        menu: menuItems
-          .filter((item) => item.nameVn.trim())
-          .map((item, index) => ({
-            id: `new-${index}`,
-            nameVn: item.nameVn,
-            nameJp: item.nameJp || item.nameVn,
-            price: Number(item.price) || 0,
-            description: item.description,
-            image: item.image,
-          })),
-        openHours: formData.openHours,
-        avgPrice: Number(formData.avgPrice) || 0,
+        nameVn: formData.nameVn.trim(),
+        nameJp: formData.nameJp.trim(),
+        address: formData.address.trim(),
+        phone: formData.phone.trim(),
+        description: formData.description.trim(),
+        descriptionJp: formData.descriptionJp.trim(),
+        coverImage: restaurantImageUrls[0],
+        images: restaurantImageUrls,
+        menu: menuItems.map((item, index) => ({
+          id: `new-${index}`,
+          nameVn: item.nameVn.trim(),
+          nameJp: item.nameJp.trim(),
+          price: Number(item.price),
+          description: item.description.trim(),
+          image: menuImageUrls[menuImageIndex++],
+        })),
+        openHours: formData.openHours.trim(),
+        avgPrice: Number(formData.avgPrice),
         tags: formData.selectedTags,
         status: "closed",
-        lat: selectedLocation ? selectedLocation.lat : 21.027764,
-        lng: selectedLocation ? selectedLocation.lng : 105.83416,
+        lat: selectedLocation?.lat ?? DEFAULT_LOCATION.lat,
+        lng: selectedLocation?.lng ?? DEFAULT_LOCATION.lng,
       });
+
       setSubmitted(true);
       setTimeout(() => {
         navigate("/owner/restaurants");
       }, 2000);
-    } catch {
-      setErrors({ submit: t.registerStore.errSubmit });
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : t.registerStore.errSubmit;
+      setErrors({ submit: message });
     } finally {
       setSaving(false);
     }
@@ -268,10 +555,10 @@ export function RegisterRestaurantPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-white border-b border-gray-100 sticky top-16 z-10">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
           <button
+            type="button"
             onClick={() => navigate(-1)}
             className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
           >
@@ -287,16 +574,13 @@ export function RegisterRestaurantPage() {
         <h1 className="text-gray-900 mb-2">{t.registerStore.pageTitle}</h1>
         <p className="text-sm text-gray-400 mb-8">{t.registerStore.pageSub}</p>
 
-        {/* Step indicator */}
         <div className="flex items-center gap-3 mb-8">
-          {steps.map((step, i) => (
+          {steps.map((step, index) => (
             <React.Fragment key={step.num}>
               <div className="flex items-center gap-2">
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center text-sm transition-all ${
-                    currentStep >= step.num
-                      ? "text-white"
-                      : "bg-gray-100 text-gray-400"
+                    currentStep >= step.num ? "text-white" : "bg-gray-100 text-gray-400"
                   }`}
                   style={currentStep >= step.num ? { background: "linear-gradient(135deg, #0066CC 0%, #004499 100%)" } : {}}
                 >
@@ -306,7 +590,7 @@ export function RegisterRestaurantPage() {
                   {step.label}
                 </span>
               </div>
-              {i < steps.length - 1 && (
+              {index < steps.length - 1 && (
                 <div className={`flex-1 h-0.5 ${currentStep > step.num ? "bg-blue-400" : "bg-gray-200"}`} />
               )}
             </React.Fragment>
@@ -321,72 +605,63 @@ export function RegisterRestaurantPage() {
         )}
 
         <form onSubmit={handleSubmit}>
-          {/* Step 1: Basic Info */}
           {currentStep === 1 && (
             <div className="space-y-5">
               <div className="bg-white rounded-2xl border border-gray-100 p-6">
                 <h3 className="text-gray-900 mb-5">{t.registerStore.step1}</h3>
 
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm text-gray-700 mb-1.5">
-                        {t.registerStore.nameVn}<span className="text-red-400">*</span>
+                        {t.registerStore.nameVn}<RequiredMark />
                       </label>
                       <input
                         type="text"
                         value={formData.nameVn}
-                        onChange={(e) => setFormData({ ...formData, nameVn: e.target.value })}
-                        placeholder="Phở Bắc Cổ Truyền"
-                        className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors ${
-                          errors.nameVn ? "border-red-300" : "border-gray-200"
-                        }`}
+                        onChange={(event) => updateFormField("nameVn", event.target.value)}
+                        placeholder="Pho Bac Co Truyen"
+                        className={inputClass(Boolean(errors.nameVn), "w-full px-3 py-2.5")}
                       />
-                      {errors.nameVn && (
-                        <p className="text-xs text-red-500 mt-1">{errors.nameVn}</p>
-                      )}
+                      <FieldError message={errors.nameVn} />
                     </div>
+
                     <div>
                       <label className="block text-sm text-gray-700 mb-1.5">
-                        {t.registerStore.nameJp}<span className="text-red-400">*</span>
+                        {t.registerStore.nameJp}<RequiredMark />
                       </label>
                       <input
                         type="text"
                         value={formData.nameJp}
-                        onChange={(e) => setFormData({ ...formData, nameJp: e.target.value })}
-                        placeholder="バックコー伝統フォー"
-                        className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors ${
-                          errors.nameJp ? "border-red-300" : "border-gray-200"
-                        }`}
+                        onChange={(event) => updateFormField("nameJp", event.target.value)}
+                        placeholder="フォー専門店"
+                        className={inputClass(Boolean(errors.nameJp), "w-full px-3 py-2.5")}
                       />
-                      {errors.nameJp && (
-                        <p className="text-xs text-red-500 mt-1">{errors.nameJp}</p>
-                      )}
+                      <FieldError message={errors.nameJp} />
                     </div>
                   </div>
 
                   <div>
                     <label className="block text-sm text-gray-700 mb-1.5">
-                      {t.registerStore.address}<span className="text-red-400">*</span>
+                      {t.registerStore.address}<RequiredMark />
                     </label>
                     <div className="relative">
                       <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <input
                         type="text"
                         value={formData.address}
-                        onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                        placeholder="12 Hàng Bún, Hoàn Kiếm, Hà Nội"
-                        className={`w-full pl-10 pr-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors ${
-                          errors.address ? "border-red-300" : "border-gray-200"
-                        }`}
+                        onChange={(event) => updateFormField("address", event.target.value)}
+                        placeholder="12 Hang Bun, Hoan Kiem, Ha Noi"
+                        className={inputClass(Boolean(errors.address), "w-full pl-10 pr-4 py-2.5")}
                       />
                     </div>
-                    {errors.address && (
-                      <p className="text-xs text-red-500 mt-1">{errors.address}</p>
-                    )}
+                    <FieldError message={errors.address} />
                     <button
                       type="button"
-                      onClick={() => setShowMapModal(true)}
+                      onClick={() => {
+                        setSearchQuery(formData.address);
+                        setShowMapModal(true);
+                      }}
                       className="mt-2 text-xs text-blue-500 hover:text-blue-600 flex items-center gap-1"
                     >
                       <MapPin className="w-3 h-3" />
@@ -395,92 +670,79 @@ export function RegisterRestaurantPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-700 mb-1.5">{t.registerStore.phone}<span className="text-red-400">*</span></label>
+                    <label className="block text-sm text-gray-700 mb-1.5">
+                      {t.registerStore.phone}<RequiredMark />
+                    </label>
                     <input
                       type="text"
                       inputMode="numeric"
                       value={formData.phone}
-                      onChange={(e) => handleNumericInput(e.target.value, (val) => setFormData({ ...formData, phone: val }))}
-                      placeholder="0912345678"
-                      className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors ${
-                        errors.phone ? "border-red-300" : "border-gray-200"
-                      }`}
+                      onChange={(event) => updateNumericField("phone", event.target.value)}
+                      placeholder="02438261011"
+                      className={inputClass(Boolean(errors.phone), "w-full px-3 py-2.5")}
                     />
-                    {errors.phone && (
-                      <p className="text-xs text-red-500 mt-1">{errors.phone}</p>
-                    )}
+                    <FieldError message={errors.phone} />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm text-gray-700 mb-1.5">
                         <Clock className="inline w-4 h-4 mr-1" />
-                        {t.registerStore.openHours}<span className="text-red-400">*</span>
+                        {t.registerStore.openHours}<RequiredMark />
                       </label>
                       <input
                         type="text"
                         value={formData.openHours}
-                        onChange={(e) => setFormData({ ...formData, openHours: e.target.value })}
+                        onChange={(event) => updateFormField("openHours", event.target.value)}
                         placeholder="10:00 - 21:00"
-                        className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors ${
-                          errors.openHours ? "border-red-300" : "border-gray-200"
-                        }`}
+                        className={inputClass(Boolean(errors.openHours), "w-full px-3 py-2.5")}
                       />
-                      {errors.openHours && (
-                        <p className="text-xs text-red-500 mt-1">{errors.openHours}</p>
-                      )}
+                      <FieldError message={errors.openHours} />
                     </div>
+
                     <div>
                       <label className="block text-sm text-gray-700 mb-1.5">
                         <DollarSign className="inline w-4 h-4 mr-1" />
-                        {t.registerStore.avgPrice}<span className="text-red-400">*</span>
+                        {t.registerStore.avgPrice}<RequiredMark />
                       </label>
                       <input
                         type="text"
                         inputMode="numeric"
                         value={formData.avgPrice}
-                        onChange={(e) => handleNumericInput(e.target.value, (val) => setFormData({ ...formData, avgPrice: val }))}
+                        onChange={(event) => updateNumericField("avgPrice", event.target.value)}
                         placeholder="65000"
-                        className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors ${
-                          errors.avgPrice ? "border-red-300" : "border-gray-200"
-                        }`}
+                        className={inputClass(Boolean(errors.avgPrice), "w-full px-3 py-2.5")}
                       />
-                      {errors.avgPrice && (
-                        <p className="text-xs text-red-500 mt-1">{errors.avgPrice}</p>
-                      )}
+                      <FieldError message={errors.avgPrice} />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-700 mb-1.5">{t.registerStore.descVn}<span className="text-red-400">*</span></label>
+                    <label className="block text-sm text-gray-700 mb-1.5">
+                      {t.registerStore.descVn}<RequiredMark />
+                    </label>
                     <textarea
                       value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      onChange={(event) => updateFormField("description", event.target.value)}
                       placeholder={t.registerStore.descVnPh}
                       rows={3}
-                      className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors resize-none ${
-                        errors.description ? "border-red-300" : "border-gray-200"
-                      }`}
+                      className={inputClass(Boolean(errors.description), "w-full px-3 py-2.5 resize-none")}
                     />
-                    {errors.description && (
-                      <p className="text-xs text-red-500 mt-1">{errors.description}</p>
-                    )}
+                    <FieldError message={errors.description} />
                   </div>
 
                   <div>
-                    <label className="block text-sm text-gray-700 mb-1.5">{t.registerStore.descJp}<span className="text-red-400">*</span></label>
+                    <label className="block text-sm text-gray-700 mb-1.5">
+                      {t.registerStore.descJp}<RequiredMark />
+                    </label>
                     <textarea
                       value={formData.descriptionJp}
-                      onChange={(e) => setFormData({ ...formData, descriptionJp: e.target.value })}
+                      onChange={(event) => updateFormField("descriptionJp", event.target.value)}
                       placeholder={t.registerStore.descJpPh}
                       rows={3}
-                      className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-blue-400 transition-colors resize-none ${
-                        errors.descriptionJp ? "border-red-300" : "border-gray-200"
-                      }`}
+                      className={inputClass(Boolean(errors.descriptionJp), "w-full px-3 py-2.5 resize-none")}
                     />
-                    {errors.descriptionJp && (
-                      <p className="text-xs text-red-500 mt-1">{errors.descriptionJp}</p>
-                    )}
+                    <FieldError message={errors.descriptionJp} />
                   </div>
                 </div>
               </div>
@@ -496,7 +758,6 @@ export function RegisterRestaurantPage() {
             </div>
           )}
 
-          {/* Step 2: Menu */}
           {currentStep === 2 && (
             <div className="space-y-5">
               <div className="bg-white rounded-2xl border border-gray-100 p-6">
@@ -511,6 +772,7 @@ export function RegisterRestaurantPage() {
                     {t.registerStore.addBtn}
                   </button>
                 </div>
+                <FieldError message={errors.menu} />
 
                 <div className="space-y-4">
                   {menuItems.map((item, index) => (
@@ -524,87 +786,110 @@ export function RegisterRestaurantPage() {
                           <X className="w-3 h-3" />
                         </button>
                       )}
-                      <p className="text-xs text-gray-500 mb-3">{t.registerStore.menuLabel} {index + 1}</p>
-                      <div className="grid grid-cols-2 gap-3 mb-3">
-                        <input
-                          type="text"
-                          value={item.nameVn}
-                          onChange={(e) => updateMenuItem(index, "nameVn", e.target.value)}
-                          placeholder={t.registerStore.dishNameVn}
-                          className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
-                        />
-                        <input
-                          type="text"
-                          value={item.nameJp}
-                          onChange={(e) => updateMenuItem(index, "nameJp", e.target.value)}
-                          placeholder={t.registerStore.dishNameJp}
-                          className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={item.price}
-                          onChange={(e) => handleNumericInput(e.target.value, (val) => updateMenuItem(index, "price", val))}
-                          placeholder={t.registerStore.price}
-                          className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
-                        />
-                        <input
-                          type="text"
-                          value={item.description}
-                          onChange={(e) => updateMenuItem(index, "description", e.target.value)}
-                          placeholder={t.registerStore.dishDesc}
-                          className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white"
-                        />
-                      </div>
-                      <div className="mt-3 flex items-center gap-4">
-                        <div className="relative">
-                          <input
-                            type="file"
-                            accept="image/*"
-                            id={`menu-image-${index}`}
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  if (typeof reader.result === "string") {
-                                    updateMenuItem(index, "image", reader.result);
-                                  }
-                                };
-                                reader.readAsDataURL(file);
-                              }
-                            }}
-                          />
-                          <label
-                            htmlFor={`menu-image-${index}`}
-                            className="cursor-pointer flex items-center justify-center w-16 h-16 bg-white border border-dashed border-gray-300 rounded-lg text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-colors overflow-hidden"
-                          >
-                            {item.isUploadingImage ? (
-                              <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                            ) : item.image ? (
-                              <img src={item.image} alt="Menu item" className="w-full h-full object-cover" />
-                            ) : (
-                              <Upload className="w-5 h-5" />
-                            )}
+
+                      <p className="text-xs text-gray-500 mb-3">
+                        {t.registerStore.menuLabel} {index + 1}
+                      </p>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr] gap-4">
+                        <div>
+                          <label className="block text-sm text-gray-700 mb-1.5">
+                            {t.registerStore.dishImage}<RequiredMark />
                           </label>
+                          {item.imagePreviewUrl ? (
+                            <div className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 bg-white">
+                              <img
+                                src={item.imagePreviewUrl}
+                                alt={item.nameVn || t.registerStore.dishImage}
+                                className="w-full h-full object-cover"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeMenuImage(index)}
+                                className="absolute top-1 right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center"
+                              >
+                                <X className="w-3 h-3 text-white" />
+                              </button>
+                            </div>
+                          ) : (
+                            <label
+                              className={`aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors bg-white ${
+                                errors[`menu.${index}.image`]
+                                  ? "border-red-300 text-red-400"
+                                  : "border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-400"
+                              }`}
+                            >
+                              <Upload className="w-6 h-6" />
+                              <span className="text-xs text-center">{t.registerStore.addDishImage}</span>
+                              <input
+                                type="file"
+                                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                                onChange={(event) => handleMenuImageSelect(index, event)}
+                                className="hidden"
+                              />
+                            </label>
+                          )}
+                          <FieldError message={errors[`menu.${index}.image`]} />
                         </div>
-                        {!item.image && !item.isUploadingImage && (
-                          <div className="text-xs text-gray-400">
-                            Thêm ảnh minh họa cho món ăn
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-sm text-gray-700 mb-1.5">
+                              {t.registerStore.dishNameVn}<RequiredMark />
+                            </label>
+                            <input
+                              type="text"
+                              value={item.nameVn}
+                              onChange={(event) => updateMenuItem(index, "nameVn", event.target.value)}
+                              placeholder={t.registerStore.dishNameVn}
+                              className={inputClass(Boolean(errors[`menu.${index}.nameVn`]), "w-full px-3 py-2")}
+                            />
+                            <FieldError message={errors[`menu.${index}.nameVn`]} />
                           </div>
-                        )}
-                        {item.image && (
-                          <button
-                            type="button"
-                            onClick={() => updateMenuItem(index, "image", "")}
-                            className="text-xs text-red-500 hover:underline"
-                          >
-                            Xóa ảnh
-                          </button>
-                        )}
+
+                          <div>
+                            <label className="block text-sm text-gray-700 mb-1.5">
+                              {t.registerStore.dishNameJp}<RequiredMark />
+                            </label>
+                            <input
+                              type="text"
+                              value={item.nameJp}
+                              onChange={(event) => updateMenuItem(index, "nameJp", event.target.value)}
+                              placeholder={t.registerStore.dishNameJp}
+                              className={inputClass(Boolean(errors[`menu.${index}.nameJp`]), "w-full px-3 py-2")}
+                            />
+                            <FieldError message={errors[`menu.${index}.nameJp`]} />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm text-gray-700 mb-1.5">
+                              {t.registerStore.price}<RequiredMark />
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={item.price}
+                              onChange={(event) => updateMenuItem(index, "price", digitsOnly(event.target.value))}
+                              placeholder={t.registerStore.price}
+                              className={inputClass(Boolean(errors[`menu.${index}.price`]), "w-full px-3 py-2")}
+                            />
+                            <FieldError message={errors[`menu.${index}.price`]} />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm text-gray-700 mb-1.5">
+                              {t.registerStore.dishDesc}<RequiredMark />
+                            </label>
+                            <input
+                              type="text"
+                              value={item.description}
+                              onChange={(event) => updateMenuItem(index, "description", event.target.value)}
+                              placeholder={t.registerStore.dishDesc}
+                              className={inputClass(Boolean(errors[`menu.${index}.description`]), "w-full px-3 py-2")}
+                            />
+                            <FieldError message={errors[`menu.${index}.description`]} />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -631,48 +916,59 @@ export function RegisterRestaurantPage() {
             </div>
           )}
 
-          {/* Step 3: Photos & Tags */}
           {currentStep === 3 && (
             <div className="space-y-5">
-              {/* Photos */}
               <div className="bg-white rounded-2xl border border-gray-100 p-6">
-                <h3 className="text-gray-900 mb-1">{t.registerStore.photoTitle}</h3>
+                <h3 className="text-gray-900 mb-1">
+                  {t.registerStore.photoTitle}<RequiredMark />
+                </h3>
                 <p className="text-sm text-gray-400 mb-5">{t.registerStore.photoSub}</p>
-                <div className="grid grid-cols-3 gap-3">
-                  {images.map((img, i) => (
-                    <div key={i} className="aspect-video rounded-xl overflow-hidden relative group">
-                      <img src={img} alt="upload" className="w-full h-full object-cover" />
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {restaurantImages.map((image, index) => (
+                    <div key={image.previewUrl} className="aspect-video rounded-xl overflow-hidden relative group">
+                      <img src={image.previewUrl} alt={image.file.name} className="w-full h-full object-cover" />
                       <button
                         type="button"
-                        onClick={() => setImages(images.filter((_, idx) => idx !== i))}
+                        onClick={() => removeRestaurantImage(index)}
                         className="absolute top-1 right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                       >
                         <X className="w-3 h-3 text-white" />
                       </button>
                     </div>
                   ))}
-                  {images.length < 8 && (
+
+                  {restaurantImages.length < MAX_RESTAURANT_IMAGES && (
                     <button
                       type="button"
-                      onClick={() => {
-                        if (images.length < 8) {
-                          setImages([...images, sampleImages[images.length % sampleImages.length]]);
-                        }
-                      }}
-                      className="aspect-video rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-blue-300 hover:text-blue-400 transition-colors"
+                      onClick={() => restaurantImageInputRef.current?.click()}
+                      className={`aspect-video rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2 transition-colors ${
+                        errors.images
+                          ? "border-red-300 text-red-400"
+                          : "border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-400"
+                      }`}
                     >
                       <Upload className="w-6 h-6" />
                       <span className="text-xs">{t.registerStore.addPhoto}</span>
                     </button>
                   )}
                 </div>
+                <input
+                  ref={restaurantImageInputRef}
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                  multiple
+                  onChange={handleRestaurantImageSelect}
+                  className="hidden"
+                />
+                <FieldError message={errors.images} />
               </div>
 
-              {/* Tags */}
               <div className="bg-white rounded-2xl border border-gray-100 p-6">
                 <div className="flex items-center gap-2 mb-1">
                   <Tag className="w-4 h-4 text-blue-400" />
-                  <h3 className="text-gray-900">{t.registerStore.tagTitle}</h3>
+                  <h3 className="text-gray-900">
+                    {t.registerStore.tagTitle}<RequiredMark />
+                  </h3>
                 </div>
                 <p className="text-sm text-gray-400 mb-4">{t.registerStore.tagSub}</p>
                 <div className="flex flex-wrap gap-2">
@@ -691,6 +987,7 @@ export function RegisterRestaurantPage() {
                     </button>
                   ))}
                 </div>
+                <FieldError message={errors.tags} />
               </div>
 
               <div className="flex gap-3">
@@ -704,10 +1001,10 @@ export function RegisterRestaurantPage() {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="flex-1 py-3 text-white rounded-xl text-sm transition-all hover:opacity-90"
+                  className="flex-1 py-3 text-white rounded-xl text-sm transition-all hover:opacity-90 disabled:opacity-60"
                   style={{ background: "linear-gradient(135deg, #0066CC 0%, #004499 100%)" }}
                 >
-                  {t.registerStore.submitBtn}
+                  {saving ? t.registerStore.saving : t.registerStore.submitBtn}
                 </button>
               </div>
             </div>
@@ -717,58 +1014,54 @@ export function RegisterRestaurantPage() {
 
       {showMapModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl overflow-hidden flex flex-col" style={{ height: '80vh' }}>
-            {/* Header */}
+          <div className="bg-white rounded-2xl w-full max-w-2xl overflow-hidden flex flex-col" style={{ height: "80vh" }}>
             <div className="p-4 border-b border-gray-100 flex justify-between items-center">
               <h3 className="text-lg font-semibold text-gray-900">Chọn vị trí trên bản đồ</h3>
               <button type="button" onClick={() => setShowMapModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
-            {/* Search & Map */}
+
             <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden relative">
               <div className="relative z-[1000]">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(event) => setSearchQuery(event.target.value)}
                     placeholder="Nhập tên đường, khu vực..."
                     className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-400"
                   />
                 </div>
-                
+
                 {isSearching && (
                   <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-sm text-gray-500 text-center">
                     Đang tìm kiếm...
                   </div>
                 )}
-                
-                {/* Suggestions Dropdown */}
+
                 {!isSearching && suggestions.length > 0 && (
                   <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">
-                    {suggestions.map((item, idx) => (
-                      <div 
-                        key={idx}
-                        className="p-3 hover:bg-gray-50 cursor-pointer text-sm border-b border-gray-50 last:border-0"
+                    {suggestions.map((item) => (
+                      <button
+                        key={`${item.lat}-${item.lon}-${item.display_name}`}
+                        type="button"
+                        className="w-full p-3 hover:bg-gray-50 cursor-pointer text-sm text-left border-b border-gray-50 last:border-0"
                         onClick={() => {
-                          const lat = parseFloat(item.lat);
-                          const lon = parseFloat(item.lon);
-                          setMapCenter({lat, lng: lon});
-                          setSelectedLocation({lat, lng: lon});
+                          const nextLocation = { lat: Number(item.lat), lng: Number(item.lon) };
+                          setMapCenter(nextLocation);
+                          setSelectedLocation(nextLocation);
                           setSearchQuery(item.display_name);
                           setSuggestions([]);
                         }}
                       >
                         {item.display_name}
-                      </div>
+                      </button>
                     ))}
                   </div>
                 )}
 
-                {/* No results */}
                 {!isSearching && hasSearched && suggestions.length === 0 && searchQuery.trim().length > 2 && (
                   <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-sm text-gray-500 text-center">
                     Không tìm thấy địa điểm nào phù hợp.
@@ -776,31 +1069,29 @@ export function RegisterRestaurantPage() {
                 )}
               </div>
 
-                {/* Map Container */}
               <div className="flex-1 rounded-xl overflow-hidden border border-gray-200 relative z-0">
-                <MapContainer center={[mapCenter.lat, mapCenter.lng]} zoom={13} style={{ height: '100%', width: '100%' }}>
+                <MapContainer center={[mapCenter.lat, mapCenter.lng]} zoom={13} style={{ height: "100%", width: "100%" }}>
                   <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                   <MapUpdater center={mapCenter} />
                   <MapEvents onLocationSelect={handleMapClick} />
-                  {selectedLocation && (
-                    <Marker position={[selectedLocation.lat, selectedLocation.lng]} />
-                  )}
+                  {selectedLocation && <Marker position={[selectedLocation.lat, selectedLocation.lng]} />}
                 </MapContainer>
               </div>
             </div>
 
-            {/* Footer / Confirm Button */}
             <div className="p-4 border-t border-gray-100 flex justify-end gap-3">
-              <button type="button" onClick={() => setShowMapModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setShowMapModal(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl"
+              >
                 Hủy
               </button>
-              <button 
+              <button
                 type="button"
-                onClick={() => {
-                  setFormData({...formData, address: searchQuery});
-                  setShowMapModal(false);
-                }}
-                className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-xl"
+                onClick={confirmSelectedAddress}
+                disabled={!searchQuery.trim()}
+                className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-xl"
               >
                 Xác nhận địa chỉ
               </button>
