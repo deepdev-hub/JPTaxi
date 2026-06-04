@@ -1,6 +1,11 @@
 import type { Conversation, MenuItem, Message, Restaurant, Review, Role, User } from "../types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8081/api";
+const rawApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || "http://localhost:8081/api";
+const API_BASE_URL = rawApiBaseUrl.replace(/\/+$/, "");
+
+function buildApiUrl(path: string) {
+  return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+}
 
 const DEFAULT_FOOD_TAGS = [
   "Phở/フォー",
@@ -73,7 +78,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     headers: {
       "Content-Type": "application/json",
       ...options?.headers,
@@ -85,7 +90,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 async function requestForm<T>(path: string, formData: FormData): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     method: "POST",
     body: formData,
   });
