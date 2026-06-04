@@ -131,7 +131,7 @@ export function RestaurantDetailPage() {
   const avgRating =
     reviews.length > 0
       ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
-      : restaurant.rating;
+      : 0;
 
   const handleReaction = async (reviewId: string, reactionType: "like" | "dislike") => {
     if (!isLoggedIn || !currentUser) { navigate("/login"); return; }

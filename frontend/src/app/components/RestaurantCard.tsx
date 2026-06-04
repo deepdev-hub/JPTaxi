@@ -17,6 +17,8 @@ export function RestaurantCard({ restaurant, compact = false, isSelected = false
   const formatPrice = (price: number) =>
     new Intl.NumberFormat("vi-VN").format(price) + "đ";
 
+  const displayRating = restaurant.reviewCount > 0 ? restaurant.rating : 0;
+
   if (compact) {
     return (
       <div
@@ -49,8 +51,8 @@ export function RestaurantCard({ restaurant, compact = false, isSelected = false
           </div>
           <p className="text-[11px] text-gray-500 mt-0.5 truncate">{restaurant.nameVn}</p>
           <div className="flex items-center gap-1 mt-1">
-            <StarRating rating={restaurant.rating} size="sm" />
-            <span className="text-xs text-gray-500">{restaurant.rating} ({restaurant.reviewCount})</span>
+            <StarRating rating={displayRating} size="sm" />
+            <span className="text-xs text-gray-500">{displayRating} ({restaurant.reviewCount})</span>
           </div>
           <div className="flex items-center gap-2 mt-1">
             <span className="flex items-center gap-0.5 text-[11px] text-gray-400">
@@ -89,7 +91,7 @@ export function RestaurantCard({ restaurant, compact = false, isSelected = false
           <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm rounded-lg px-2 py-1">
             <div className="flex items-center gap-1">
               <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-              <span className="text-sm text-gray-900">{restaurant.rating}</span>
+              <span className="text-sm text-gray-900">{displayRating}</span>
             </div>
           </div>
         </div>
