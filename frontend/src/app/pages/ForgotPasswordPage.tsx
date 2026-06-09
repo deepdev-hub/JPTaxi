@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { AlertCircle, CheckCircle, Mail, MapPin, Key, Lock, Eye, EyeOff } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
+import { getUserByEmail, updateUser } from "../api/client";
 
 // 3 mã OTP demo có chứa chữ và số theo yêu cầu
 const VALID_OTPS = ["X7K9P2", "M4V2Q8", "L9Z3T5"];
@@ -38,11 +39,15 @@ export function ForgotPasswordPage() {
     }
 
     setLoading(true);
-    // Giả lập delay gọi API 0.8 giây
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      // Gọi API kiểm tra xem email có tồn tại không
+      await getUserByEmail(email);
       setStep(2);
-    }, 800);
+    } catch {
+      setError(t.forgotPassword?.errorInvalid || "Email không tồn tại trong hệ thống");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleOtpSubmit = (e: React.FormEvent) => {
@@ -61,7 +66,7 @@ export function ForgotPasswordPage() {
     }
   };
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -76,11 +81,19 @@ export function ForgotPasswordPage() {
     }
 
     setLoading(true);
-    // Giả lập delay cập nhật mật khẩu
-    setTimeout(() => {
+    try {
+      const user = await getUserByEmail(email);
+      if (user && user.id) {
+        await updateUser(user.id, { password: newPassword });
+        setStep(4);
+      } else {
+        setError("Không tìm thấy người dùng");
+      }
+    } catch {
+      setError("Có lỗi xảy ra khi cập nhật mật khẩu. Vui lòng thử lại.");
+    } finally {
       setLoading(false);
-      setStep(4);
-    }, 1000);
+    }
   };
 
   if (step === 4) {
