@@ -1,11 +1,9 @@
 package com.jptaxi.application.service;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Collection;
-import java.util.Base64;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -110,25 +108,6 @@ public class SupabaseStorageService {
                 throw exception;
             }
             throw new ImageValidationException("Invalid base64 image");
-        }
-    }
-
-    public String uploadExisting(Path imagePath, StorageImageType imageType) {
-        if (imagePath == null || !Files.isRegularFile(imagePath)) {
-            throw new ImageValidationException("Image file does not exist");
-        }
-
-        String filename = imagePath.getFileName().toString();
-        String extension = extensionFor(filename);
-        try {
-            if (Files.size(imagePath) > MAX_IMAGE_SIZE_BYTES) {
-                throw new ImageValidationException("Each image must be 10MB or smaller");
-            }
-            String key = imageType.directory() + "/" + filename;
-            putObject(key, Files.readAllBytes(imagePath), contentTypeForExtension(extension));
-            return publicUrlForKey(key);
-        } catch (IOException exception) {
-            throw new SupabaseStorageException("Cannot read existing image data", exception);
         }
     }
 
@@ -247,12 +226,4 @@ public class SupabaseStorageService {
         };
     }
 
-    private String contentTypeForExtension(String extension) {
-        return switch (extension) {
-            case ".jpg", ".jpeg" -> "image/jpeg";
-            case ".png" -> "image/png";
-            case ".webp" -> "image/webp";
-            default -> throw new ImageValidationException("Only jpg, jpeg, png, and webp images are allowed");
-        };
-    }
 }

@@ -53,3 +53,5 @@ frontend/dist/
 *.log
 
 application copy.properties
+
+/uploads/
