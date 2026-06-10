@@ -16,7 +16,7 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
-import { createRestaurant, getFoodTags, uploadRestaurantImages } from "../api/client";
+import { createRestaurant, getFoodTags, uploadMenuImage, uploadRestaurantImages } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { useApiData } from "../hooks/useApiData";
 import { useLanguage } from "../context/LanguageContext";
@@ -496,8 +496,11 @@ export function RegisterRestaurantPage() {
       const restaurantImageUrls = await uploadRestaurantImages(
         restaurantImages.map((image) => image.file)
       );
-      const menuImageUrls = await uploadRestaurantImages(
-        menuItems.map((item) => item.imageFile).filter((file): file is File => Boolean(file))
+      const menuImageUrls = await Promise.all(
+        menuItems
+          .map((item) => item.imageFile)
+          .filter((file): file is File => Boolean(file))
+          .map((file) => uploadMenuImage(file).then(({ url }) => url))
       );
       let menuImageIndex = 0;
 

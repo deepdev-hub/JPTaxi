@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from "react-router";
 import {
   ChevronLeft, Save, Upload, Plus, X, CheckCircle, ToggleLeft, ToggleRight, AlertCircle
 } from "lucide-react";
-import { getFoodTags, getRestaurant, updateRestaurant, uploadRestaurantImages } from "../api/client";
+import { getFoodTags, getRestaurant, updateRestaurant, uploadMenuImage, uploadRestaurantImages } from "../api/client";
 import type { MenuItem, Restaurant } from "../types";
 import { useAuth } from "../context/AuthContext";
 import { useApiData } from "../hooks/useApiData";
@@ -167,8 +167,10 @@ export function ManageRestaurantPage() {
       let nextMenuItems = menuItems;
       const menuUploadEntries = Object.entries(menuImageUploads);
       if (menuUploadEntries.length > 0) {
-        const uploadedMenuImageUrls = await uploadRestaurantImages(
-          menuUploadEntries.map(([, image]) => image.file)
+        const uploadedMenuImageUrls = await Promise.all(
+          menuUploadEntries.map(([, image]) =>
+            uploadMenuImage(image.file).then(({ url }) => url)
+          )
         );
         const uploadedImageByKey = new Map(
           menuUploadEntries.map(([key], index) => [key, uploadedMenuImageUrls[index]])
