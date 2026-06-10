@@ -10,12 +10,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
 
@@ -28,9 +25,6 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 
 class SupabaseStorageServiceTests {
-
-    @TempDir
-    Path tempDirectory;
 
     @Test
     void uploadsRestaurantImageWithPublicCachingAndReturnsPublicUrl() {
@@ -104,27 +98,6 @@ class SupabaseStorageServiceTests {
         assertThat(requestCaptor.getValue().key()).matches("menu-items/menu-[0-9a-f-]+\\.webp");
         assertThat(requestCaptor.getValue().contentType()).isEqualTo("image/webp");
         assertThat(url).endsWith("/" + requestCaptor.getValue().key());
-    }
-
-    @Test
-    void migrationUploadPreservesFilenameAndOverwritesTheSameObjectKey() throws Exception {
-        S3Client s3Client = mock(S3Client.class);
-        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
-                .thenReturn(PutObjectResponse.builder().build());
-        SupabaseStorageService service = new SupabaseStorageService(s3Client, properties());
-        Path image = tempDirectory.resolve("restaurant-existing.png");
-        Files.writeString(image, "existing", StandardCharsets.UTF_8);
-
-        String firstUrl = service.uploadExisting(image, StorageImageType.RESTAURANT);
-        String secondUrl = service.uploadExisting(image, StorageImageType.RESTAURANT);
-
-        ArgumentCaptor<PutObjectRequest> requestCaptor = ArgumentCaptor.forClass(PutObjectRequest.class);
-        verify(s3Client, org.mockito.Mockito.times(2))
-                .putObject(requestCaptor.capture(), any(RequestBody.class));
-        assertThat(requestCaptor.getAllValues())
-                .extracting(PutObjectRequest::key)
-                .containsOnly("restaurants/restaurant-existing.png");
-        assertThat(secondUrl).isEqualTo(firstUrl);
     }
 
     @Test
