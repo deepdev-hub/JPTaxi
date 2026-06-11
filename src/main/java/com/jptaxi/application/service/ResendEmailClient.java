@@ -57,6 +57,7 @@ public class ResendEmailClient {
         if (response == null || response.id() == null || response.id().isBlank()) {
             throw new ResendEmailException("Resend did not return an email id");
         }
+        LOGGER.info("Resend accepted password reset email with id {}", response.id());
         return response.id();
     }
 
