@@ -1,0 +1,712 @@
+.booking-screen {
+  min-height: calc(100vh - 78px);
+  overflow: visible;
+  background: #f6f8fb;
+}
+
+.booking-screen .topbar {
+  background: #fff;
+  border-bottom: 1px solid #e5eaf0;
+}
+
+.account-menu {
+  position: relative;
+}
+
+.profile-button {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e5eaf0;
+  border-radius: 50%;
+}
+
+.profile-button img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.account-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 10;
+  display: none;
+  width: 170px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #e5eaf0;
+  border-radius: 12px;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16);
+}
+
+.account-dropdown.open {
+  display: grid;
+  gap: 6px;
+}
+
+.account-dropdown button {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+}
+
+.account-dropdown button:hover {
+  background: #f1f5f9;
+}
+
+.booking-layout {
+  display: grid;
+  grid-template-columns: minmax(400px, 500px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  width: min(100%, 1600px);
+  min-height: calc(100vh - 156px);
+  margin: 0 auto;
+  padding: 16px 24px 18px;
+  overflow: visible;
+}
+
+.confirm-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-height: 0;
+  padding-bottom: 24px;
+}
+
+.page-heading h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.page-heading p {
+  margin: 4px 0 0;
+  color: #667085;
+  font-size: 12px;
+}
+
+.section-card {
+  padding: 11px 14px;
+  background: #fff;
+  border: 1px solid #e5eaf0;
+  border-radius: 8px;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.04);
+}
+
+.section-card h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.route-list {
+  display: grid;
+  gap: 6px;
+}
+
+.route-point {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: start;
+  gap: 8px;
+}
+
+.point-dot {
+  width: 8px;
+  height: 8px;
+  margin: 5px auto 0;
+  background: #10b981;
+  border-radius: 50%;
+}
+
+.destination .point-dot {
+  background: #111827;
+  border-radius: 3px;
+}
+
+.route-point span:not(.point-dot) {
+  display: block;
+  color: #667085;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.route-point strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.route-line {
+  width: 1px;
+  height: 12px;
+  margin-left: 9px;
+  background: #d0d5dd;
+}
+
+.trip-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.trip-summary article {
+  display: grid;
+  place-items: center;
+  min-height: 46px;
+  padding: 6px;
+  background: #f8fafc;
+  border: 1px solid #dfe6ee;
+  border-radius: 8px;
+}
+
+.trip-summary span {
+  color: #667085;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.trip-summary strong {
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.vehicle-card {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  background: #ecfdf5;
+  border: 2px solid #55d8ae;
+  border-radius: 10px;
+}
+
+.vehicle-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: #fff;
+  background: #10b981;
+  border-radius: 9px;
+  font-size: 17px;
+}
+
+.vehicle-card strong {
+  display: block;
+  font-size: 14px;
+}
+
+.vehicle-card span:not(.vehicle-icon) {
+  display: block;
+  margin-top: 2px;
+  color: #667085;
+  font-size: 11px;
+}
+
+.vehicle-price {
+  font-size: 18px;
+}
+
+.memo-field {
+  display: grid;
+  gap: 6px;
+}
+
+.memo-field span,
+.proxy-fields span {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.memo-field textarea {
+  min-height: 52px;
+  max-height: 52px;
+  padding: 10px 12px;
+  resize: none;
+}
+
+.fare-card dl {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #cbd5e1;
+}
+
+.fare-card dl div,
+.total-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.fare-card dt,
+.fare-card dd {
+  margin: 0;
+  color: #475467;
+  font-size: 12px;
+}
+
+.fare-card dd {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.total-row {
+  padding-top: 8px;
+  color: #008f75;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.booking-mode {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px;
+  background: #eef2f7;
+  border-radius: 12px;
+}
+
+.mode-button {
+  min-width: 90px;
+  height: 32px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+}
+
+.mode-button.active {
+  color: #008f75;
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+}
+
+.action-row,
+.modal-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.action-row .secondary-button {
+  height: 46px;
+  font-size: 14px;
+  border-radius: 11px;
+}
+
+.primary-button {
+  height: 46px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  background: #10b981;
+  border: 0;
+  border-radius: 13px;
+  box-shadow: 0 16px 34px rgba(16, 185, 129, 0.25);
+}
+
+.primary-button:hover {
+  background: #059669;
+}
+
+.map-panel {
+  position: relative;
+  align-self: start;
+  width: 100%;
+  min-height: 0;
+  height: min(720px, calc(100vh - 118px));
+  overflow: hidden;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.16)),
+    url("https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=1400&q=80") center / cover;
+  border: 1px solid #e5eaf0;
+  border-radius: 4px;
+  position: sticky;
+  top: 94px;
+}
+
+.booking-route-map {
+  min-height: 560px;
+}
+
+.route-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.route-svg path {
+  fill: none;
+  stroke: #10b981;
+  stroke-width: 10;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.map-label {
+  position: absolute;
+  z-index: 2;
+  padding: 7px 10px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.15);
+}
+
+.pickup-label {
+  top: 220px;
+  left: 18%;
+}
+
+.destination-label {
+  right: 24%;
+  bottom: 220px;
+}
+
+.map-pin {
+  position: absolute;
+  z-index: 3;
+  width: 17px;
+  height: 17px;
+  background: #10b981;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+}
+
+.pickup-pin {
+  top: 33%;
+  left: 34%;
+}
+
+.destination-pin {
+  right: 33%;
+  bottom: 31%;
+  background: #111827;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: none;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.booking-screen .modal-backdrop {
+  z-index: 5000 !important;
+}
+
+.modal-backdrop.open {
+  display: grid;
+}
+
+.proxy-modal {
+  position: relative;
+  z-index: 5001;
+  width: min(100%, 680px);
+  padding: 22px 26px 26px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.28);
+}
+
+.proxy-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  padding: 18px;
+  background: #fff;
+  border: 1px solid #e5eaf0;
+  border-radius: 8px;
+}
+
+.proxy-fields label {
+  display: grid;
+  gap: 9px;
+}
+
+.modal-actions {
+  margin-top: 20px;
+}
+
+.toast {
+  position: fixed;
+  right: 28px;
+  bottom: 104px;
+  z-index: 2010;
+  padding: 14px 18px;
+  color: #fff;
+  font-weight: 800;
+  background: #0f172a;
+  border-radius: 12px;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: 0.2s ease;
+  pointer-events: none;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Bill confirmation reference layout */
+.booking-reference-screen {
+  height: calc(100dvh - 58px);
+  min-height: calc(100dvh - 58px);
+  overflow: hidden;
+  background: #fff;
+}
+
+.booking-reference-screen .topbar {
+  height: 48px;
+  padding: 0 14px;
+}
+
+.booking-reference-screen .brand {
+  gap: 8px;
+  font-size: 20px;
+}
+
+.booking-reference-screen .brand-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  font-size: 16px;
+}
+
+.booking-reference-screen .profile-button img {
+  width: 30px;
+  height: 30px;
+}
+
+.booking-reference-layout {
+  grid-template-columns: clamp(360px, 34vw, 500px) minmax(0, 1fr);
+  gap: 0;
+  width: 100%;
+  height: calc(100dvh - 106px);
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  background: #fff;
+}
+
+.booking-reference-layout .confirm-panel {
+  gap: 7px;
+  padding: 10px 12px;
+  overflow-y: auto;
+  border-right: 1px solid #e5e7eb;
+}
+
+.booking-reference-layout .page-heading h1 {
+  font-size: 21px;
+}
+
+.booking-reference-layout .page-heading p {
+  font-size: 11px;
+}
+
+.booking-reference-layout .section-card {
+  padding: 8px 10px;
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.booking-reference-layout .section-card h2 {
+  margin-bottom: 7px;
+  font-size: 13px;
+}
+
+.booking-reference-layout .trip-summary {
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.booking-reference-layout .trip-summary article {
+  min-height: 42px;
+}
+
+.booking-reference-layout .vehicle-card {
+  padding: 8px 10px;
+}
+
+.booking-reference-layout .vehicle-option {
+  min-height: 58px;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+
+.booking-reference-layout .memo-field textarea {
+  min-height: 46px;
+  max-height: 46px;
+}
+
+.booking-reference-layout .fare-card dl {
+  gap: 4px;
+}
+
+.booking-reference-layout .booking-mode {
+  min-height: 32px;
+}
+
+.booking-reference-layout .booking-mode button {
+  min-height: 32px;
+  padding: 0 11px;
+  font-size: 11px;
+}
+
+.booking-reference-layout .action-row {
+  gap: 8px;
+}
+
+.booking-reference-layout .action-row button {
+  min-height: 40px;
+  height: 40px;
+}
+
+.booking-reference-layout .map-panel {
+  top: auto;
+  height: calc(100dvh - 106px);
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.booking-reference-footer .bottom-nav {
+  height: 58px;
+}
+
+.booking-reference-footer .bottom-item {
+  min-width: 180px;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.booking-reference-footer .bottom-icon {
+  font-size: 17px;
+}
+
+.booking-reference-footer .divider {
+  height: 32px;
+}
+
+@media (min-width: 981px) and (max-height: 760px) {
+  .booking-reference-layout .confirm-panel {
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .booking-reference-layout .page-heading h1 {
+    font-size: 19px;
+  }
+
+  .booking-reference-layout .section-card {
+    padding: 7px 9px;
+  }
+
+  .booking-reference-layout .memo-field textarea {
+    min-height: 40px;
+    max-height: 40px;
+  }
+
+  .booking-reference-layout .action-row button,
+  .booking-reference-layout .action-row .secondary-button {
+    height: 38px;
+    min-height: 38px;
+  }
+}
+
+@media (max-width: 980px) {
+  .booking-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .map-panel {
+    position: relative;
+    top: auto;
+    height: 520px;
+    min-height: 520px;
+  }
+
+  .booking-reference-screen {
+    height: auto;
+    min-height: calc(100dvh - 58px);
+    overflow: auto;
+  }
+
+  .booking-reference-layout {
+    height: auto;
+  }
+
+  .booking-reference-layout .confirm-panel {
+    overflow-y: visible;
+  }
+}
+
+@media (max-width: 560px) {
+  .booking-reference-screen {
+    min-height: calc(100dvh - 56px);
+  }
+
+  .booking-reference-footer .bottom-nav {
+    height: 56px;
+  }
+
+  .booking-layout {
+    padding: 12px;
+  }
+
+  .map-panel {
+    height: 420px;
+    min-height: 420px;
+  }
+
+  .trip-summary,
+  .proxy-fields,
+  .action-row,
+  .modal-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .booking-mode {
+    width: 100%;
+  }
+
+  .mode-button {
+    flex: 1;
+  }
+
+  .vehicle-card {
+    grid-template-columns: 44px 1fr;
+  }
+
+  .vehicle-price {
+    grid-column: 2;
+  }
+}

@@ -1,0 +1,15 @@
+import { IsString, MinLength } from 'class-validator';
+
+export class UpdateBankAccountDto {
+  @IsString()
+  @MinLength(1)
+  bankName: string;
+
+  @IsString()
+  @MinLength(1)
+  accountNumber: string;
+
+  @IsString()
+  @MinLength(1)
+  accountHolder: string;
+}

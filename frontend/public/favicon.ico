@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="JP TAXI">
+  <rect width="64" height="64" rx="16" fill="#008f75"/>
+  <path fill="#ffffff" d="M16 34h32l-3.2-10.2A8 8 0 0 0 37.2 18H26.8a8 8 0 0 0-7.6 5.8L16 34Zm8-8.3A3.9 3.9 0 0 1 27.8 23h8.4a3.9 3.9 0 0 1 3.8 2.7l1.4 4.3H22.6l1.4-4.3Z"/>
+  <path fill="#ffffff" d="M14 34h36a5 5 0 0 1 5 5v7a2 2 0 0 1-2 2h-4.2a5.8 5.8 0 0 1-11.6 0H26.8a5.8 5.8 0 0 1-11.6 0H11a2 2 0 0 1-2-2v-7a5 5 0 0 1 5-5Zm7 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm22 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/>
+  <path fill="#008f75" d="M18 38h8v4h-8zM38 38h8v4h-8z"/>
+</svg>

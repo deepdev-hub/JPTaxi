@@ -1,0 +1,401 @@
+.search-screen {
+  min-height: calc(100vh - 78px);
+  overflow: hidden;
+  background: var(--soft);
+}
+
+.search-screen .topbar {
+  position: relative;
+  z-index: 20;
+  background: #fff;
+  border-bottom: 1px solid #e5eaf0;
+}
+
+.location-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  color: #475467;
+  font-size: 13px;
+  font-weight: 800;
+  background: #f8fafc;
+  border: 1px solid #e5eaf0;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.location-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--green-soft);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.14);
+}
+
+.map-stage {
+  position: relative;
+  height: calc(100vh - 156px);
+  min-height: calc(100vh - 156px);
+  overflow: hidden;
+  background: #dbe7df;
+}
+
+.search-background-map {
+  z-index: 0;
+}
+
+.search-background-map .leaflet-control-attribution {
+  display: none;
+}
+
+.search-background-map .leaflet-current-location {
+  background: rgba(139, 0, 0, 0.3);
+  box-shadow: 0 0 0 15px rgba(139, 0, 0, 0.24), 0 14px 34px rgba(45, 0, 0, 0.52);
+}
+
+.search-background-map .leaflet-current-location::before {
+  position: absolute;
+  inset: -18px;
+  content: "";
+  border: 2px solid rgba(139, 0, 0, 0.58);
+  border-radius: 50%;
+  animation: search-location-pulse 2.8s infinite ease-out;
+}
+
+.search-background-map .leaflet-current-location span {
+  background: #8b0000;
+}
+
+@keyframes search-location-pulse {
+  0% {
+    opacity: 0.86;
+    transform: scale(0.48);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.65);
+  }
+}
+
+.map-stage::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background:
+    radial-gradient(circle at 50% 47%, rgba(16, 185, 129, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(246, 248, 251, 0.08), rgba(246, 248, 251, 0.66));
+  pointer-events: none;
+}
+
+.taxi-live {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  color: var(--green);
+  font-size: 21px;
+  background: #fff;
+  border: 1px solid rgba(229, 234, 240, 0.9);
+  border-radius: 11px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+}
+
+.taxi-one {
+  top: 18%;
+  left: 24%;
+  animation: drive-one 12s infinite ease-in-out;
+}
+
+.taxi-two {
+  top: 42%;
+  right: 22%;
+  animation: drive-two 14s infinite ease-in-out;
+}
+
+.taxi-three {
+  bottom: 24%;
+  left: 18%;
+  animation: drive-three 16s infinite ease-in-out;
+}
+
+@keyframes drive-one {
+  50% { transform: translate(24px, 86px) rotate(8deg); }
+}
+
+@keyframes drive-two {
+  50% { transform: translate(-132px, 24px) rotate(-7deg); }
+}
+
+@keyframes drive-three {
+  50% { transform: translate(118px, -44px) rotate(10deg); }
+}
+
+.pulse {
+  position: absolute;
+  width: min(260px, 42vh);
+  height: min(260px, 42vh);
+  border: 2px solid rgba(239, 68, 68, 0.62);
+  border-radius: 50%;
+  opacity: 0;
+  animation: ripple 4s infinite cubic-bezier(0, 0.2, 0.8, 1);
+  pointer-events: none;
+}
+
+.pulse:nth-child(2) {
+  animation-delay: 1.25s;
+}
+
+.pulse:nth-child(3) {
+  animation-delay: 2.5s;
+}
+
+@keyframes ripple {
+  0% {
+    opacity: 0.78;
+    transform: scale(0.22);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.85);
+  }
+}
+
+.status-card {
+  position: absolute;
+  right: 24px;
+  bottom: 20px;
+  left: 24px;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 18px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(229, 234, 240, 0.94);
+  border-radius: 12px;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(12px);
+}
+
+.status-info {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 14px;
+}
+
+.spinner {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border: 4px solid #e5eaf0;
+  border-top-color: var(--green-soft);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.text-group h1 {
+  margin: 0;
+  font-size: 21px;
+  line-height: 1.18;
+}
+
+.text-group p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.status-card .secondary-button,
+.status-card .submit-button {
+  height: 46px;
+  font-size: 14px;
+  border-radius: 11px;
+  white-space: nowrap;
+}
+
+.cancel-button {
+  min-height: 48px;
+  padding: 0 20px;
+  color: #b42318;
+  font-size: 14px;
+  font-weight: 800;
+  background: #fff5f5;
+  border: 1px solid #ffd6d6;
+  border-radius: 10px;
+}
+
+.cancel-button:hover {
+  background: #fee4e2;
+}
+
+.status-card {
+  right: 10px;
+  bottom: 10px;
+  left: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid #edf1f5;
+  border-radius: 16px;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(12px);
+}
+
+.status-info,
+.status-card .card-actions {
+  min-height: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.status-info {
+  width: 100%;
+  padding: 0;
+}
+
+.status-card .card-actions {
+  display: grid;
+  place-items: center;
+  min-width: 150px;
+  padding: 0;
+}
+
+.status-card .spinner {
+  width: 32px;
+  height: 32px;
+  border-width: 3px;
+}
+
+.waiting-title-row {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 14px;
+}
+
+.waiting-title-row h1 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.reservation-cancel-button {
+  min-width: 126px;
+  min-height: 46px;
+  padding: 0 18px;
+  color: #f04438;
+  font-size: 13px;
+  font-weight: 900;
+  background: #fff7f8;
+  border: 1px solid #ffe4e8;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.reservation-cancel-button:hover {
+  background: #fff0f2;
+}
+
+.reservation-cancel-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.driver-cancel-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.driver-cancel-popup {
+  width: min(100%, 420px);
+  padding: 22px;
+  background: #fff;
+  border: 1px solid #e5eaf0;
+  border-radius: 12px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+}
+
+.driver-cancel-popup h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.driver-cancel-popup p {
+  margin: 10px 0 18px;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.driver-cancel-popup button {
+  width: 100%;
+  min-height: 46px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 900;
+  background: #047857;
+  border: 0;
+  border-radius: 10px;
+}
+
+@media (max-width: 720px) {
+  .search-screen {
+    min-height: calc(100vh - 64px);
+  }
+
+  .map-stage {
+    height: calc(100vh - 142px);
+    min-height: calc(100vh - 142px);
+  }
+
+  .location-chip {
+    max-width: 48vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .status-card {
+    grid-template-columns: 1fr;
+    right: 14px;
+    bottom: 12px;
+    left: 14px;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .status-info {
+    align-items: flex-start;
+  }
+
+  .cancel-button {
+    width: 100%;
+  }
+
+  .status-card .card-actions,
+  .reservation-cancel-button {
+    width: 100%;
+  }
+}
