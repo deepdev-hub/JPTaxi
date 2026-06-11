@@ -43,7 +43,7 @@ public class PasswordResetTokenService {
         passwordResetToken.setToken(hashToken(rawToken));
         passwordResetToken.setExpiredAt(LocalDateTime.now().plusMinutes(expirationMinutes));
         passwordResetToken.setUsed(false);
-        tokenRepository.save(passwordResetToken);
+        tokenRepository.saveAndFlush(passwordResetToken);
 
         return rawToken;
     }

@@ -31,7 +31,7 @@ export function ForgotPasswordPage() {
       await requestPasswordReset({ email });
       setSuccess(true);
     } catch {
-      setError("Khong the gui email reset mat khau. Vui long kiem tra cau hinh SMTP va thu lai.");
+      setError("Dịch vụ gửi email đang tạm thời gián đoạn. Vui lòng thử lại sau.");
     } finally {
       setLoading(false);
     }

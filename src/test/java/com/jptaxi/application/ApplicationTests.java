@@ -9,7 +9,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 		"supabase.storage.access-key=test-access-key",
 		"supabase.storage.secret-key=test-secret-key",
 		"supabase.storage.bucket=images",
-		"supabase.storage.public-url=https://project.supabase.co/storage/v1/object/public/images"
+		"supabase.storage.public-url=https://project.supabase.co/storage/v1/object/public/images",
+		"resend.api.key=test-api-key",
+		"resend.api.url=https://api.resend.com/emails",
+		"resend.api.connect-timeout=1s",
+		"resend.api.read-timeout=1s",
+		"app.mail.from=Restaurant Finder <noreply@example.com>"
 })
 class ApplicationTests {
 

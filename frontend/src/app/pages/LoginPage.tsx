@@ -32,11 +32,6 @@ export function LoginPage() {
     }
   };
 
-  const quickLogin = (email: string) => {
-    setEmail(email);
-    setPassword("demo1234");
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -119,38 +114,6 @@ export function LoginPage() {
               </Link>
             </p>
           </div>
-        </div>
-
-        {/* Demo accounts */}
-        <div className="mt-6 bg-white rounded-2xl border border-gray-100 p-5">
-          <p className="text-xs text-gray-400 mb-3 text-center">{t.login.demoTitle}</p>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => quickLogin("tanaka@example.com")}
-              className="flex items-center gap-2 p-2.5 rounded-xl border border-blue-100 bg-blue-50 hover:bg-blue-100 transition-colors"
-            >
-              <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
-                <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&h=80&fit=crop" alt="Diner" className="w-full h-full object-cover" />
-              </div>
-              <div className="text-left">
-                <p className="text-xs text-blue-800">田中（Diner）</p>
-                <p className="text-[10px] text-blue-400">{t.login.dinerLabel}</p>
-              </div>
-            </button>
-            <button
-              onClick={() => quickLogin("an.nguyen@example.com")}
-              className="flex items-center gap-2 p-2.5 rounded-xl border border-green-100 bg-green-50 hover:bg-green-100 transition-colors"
-            >
-              <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
-                <img src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=80&h=80&fit=crop" alt="Owner" className="w-full h-full object-cover" />
-              </div>
-              <div className="text-left">
-                <p className="text-xs text-green-800">Văn An（Owner）</p>
-                <p className="text-[10px] text-green-400">{t.login.ownerLabel}</p>
-              </div>
-            </button>
-          </div>
-          <p className="text-[10px] text-gray-400 text-center mt-3">Demo password: demo1234</p>
         </div>
       </div>
     </div>
