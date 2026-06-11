@@ -1,9 +1,7 @@
 .auth-screen {
   min-height: 100vh;
   overflow: visible;
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.94) 0%, rgba(255, 255, 255, 0.52) 54%, rgba(255, 255, 255, 0.98) 72%),
-    url("https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=1600&q=80") center / cover;
+  background: linear-gradient(120deg, #f8fbff 0%, #e4f0ff 54%, #ffffff 100%);
 }
 
 .auth-layout {
@@ -278,9 +276,7 @@
 
 .driver-register-screen {
   min-height: 100vh;
-  background:
-    linear-gradient(90deg, rgba(255,255,255,0.82) 0%, rgba(255,255,255,0.72) 58%, rgba(255,255,255,0.96) 63%),
-    url("https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?auto=format&fit=crop&w=1800&q=80") center / cover;
+  background: linear-gradient(120deg, #edf5ff 0%, #f8fbff 58%, #ffffff 100%);
 }
 
 .driver-register-layout {

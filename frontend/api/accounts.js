@@ -1,101 +1,59 @@
-import { apiRequest, API_BASE } from './client.js';
+import { API_BASE, apiRequest } from './client.js';
+import { getAuthToken } from '../utils/session.js';
 
-const DEFAULT_CUSTOMER_ID = 1;
-const DEFAULT_DRIVER_ID = 1;
-
-function decodeJwtPayload(token) {
+function currentJwtPayload() {
+  const token = getAuthToken();
   if (!token) return null;
   try {
     const [, payload] = token.split('.');
-    if (!payload) return null;
     const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
-    return JSON.parse(atob(padded));
+    return JSON.parse(atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')));
   } catch {
     return null;
   }
 }
 
-function idFromRoleToken(role) {
-  const token = role === 'driver'
-    ? localStorage.getItem('jpTaxiDriverToken') || localStorage.getItem('jpTaxiToken')
-    : localStorage.getItem('jpTaxiCustomerToken') || localStorage.getItem('jpTaxiToken');
-  const payload = decodeJwtPayload(token);
-  if (payload?.role && payload.role !== role) return null;
-  return Number(payload?.id) || null;
-}
-
-function idFromEmail(prefix, fallback) {
-  const activeRole = sessionStorage.getItem('jpTaxiActiveRole') || localStorage.getItem('jpTaxiRole');
-  const roleEmail = activeRole === 'driver'
-    ? localStorage.getItem('jpTaxiDriverEmail')
-    : localStorage.getItem('jpTaxiCustomerEmail');
-  const email = roleEmail || localStorage.getItem('jpTaxiUserEmail') || '';
-  const match = email.match(new RegExp(`^${prefix}(\\d+)@`, 'i'));
-  return match ? Number(match[1]) : fallback;
-}
-
-function getStoredDriverEmail() {
-  return localStorage.getItem('jpTaxiDriverEmail') || localStorage.getItem('jpTaxiUserEmail') || '';
-}
-
-function hasExplicitDriverId() {
-  return Boolean(
-    idFromRoleToken('driver')
-    || Number(localStorage.getItem('jpTaxiDriverId'))
-    || getStoredDriverEmail().match(/^driver\d+@/i),
-  );
-}
-
 export function getCurrentCustomerId() {
-  return idFromRoleToken('customer') || Number(localStorage.getItem('jpTaxiCustomerId')) || idFromEmail('customer', DEFAULT_CUSTOMER_ID);
+  const payload = currentJwtPayload();
+  return payload?.role === 'customer' ? Number(payload.id) : null;
 }
 
 export function getCurrentDriverId() {
-  return idFromRoleToken('driver') || Number(localStorage.getItem('jpTaxiDriverId')) || idFromEmail('driver', DEFAULT_DRIVER_ID);
+  const payload = currentJwtPayload();
+  return payload?.role === 'driver' ? Number(payload.id) : null;
 }
 
-export function getCustomerProfile(customerId = getCurrentCustomerId()) {
-  return apiRequest(`/customers/${customerId}/profile`);
+export function getCustomerProfile() {
+  return apiRequest('/customers/me/profile');
 }
 
-export function updateCustomerProfile(payload, customerId = getCurrentCustomerId()) {
-  return apiRequest(`/customers/${customerId}/profile`, {
+export function updateCustomerProfile(payload) {
+  return apiRequest('/customers/me/profile', {
     method: 'PUT',
     body: JSON.stringify(payload),
   });
 }
 
-export async function getDriverProfile(driverId = getCurrentDriverId()) {
-  const email = getStoredDriverEmail();
-  if (email && !hasExplicitDriverId()) {
-    try {
-      const profile = await apiRequest(`/drivers/profile-by-email?email=${encodeURIComponent(email)}`);
-      if (profile?.driverId) localStorage.setItem('jpTaxiDriverId', String(profile.driverId));
-      return profile;
-    } catch {
-      // Fallback to the legacy demo profile route below.
-    }
-  }
-  return apiRequest(`/drivers/${driverId}/profile`);
+export function getDriverProfile() {
+  return apiRequest('/drivers/me/profile');
 }
 
-export function updateDriverProfile(payload, driverId = getCurrentDriverId()) {
-  return apiRequest(`/drivers/${driverId}/profile`, {
+export function updateDriverProfile(payload) {
+  return apiRequest('/drivers/me/profile', {
     method: 'PUT',
     body: JSON.stringify(payload),
   });
 }
 
-export function updateDriverBankAccount(payload, driverId = getCurrentDriverId()) {
-  return apiRequest(`/drivers/${driverId}/bank-account`, {
+export function updateDriverBankAccount(payload) {
+  return apiRequest('/drivers/me/bank-account', {
     method: 'PUT',
     body: JSON.stringify(payload),
   });
 }
 
-export function updateDriverDocuments(payload, driverId = getCurrentDriverId()) {
-  return apiRequest(`/drivers/${driverId}/documents`, {
+export function updateDriverDocuments(payload) {
+  return apiRequest('/drivers/me/documents', {
     method: 'PUT',
     body: JSON.stringify(payload),
   });
@@ -113,8 +71,7 @@ export async function uploadAvatar(file) {
     method: 'POST',
     body: formData,
   });
-  if (!result?.url) return null;
-  return resolveAssetUrl(result.url);
+  return result?.url ? resolveAssetUrl(result.url) : null;
 }
 
 export async function uploadDriverDocument(documentType, file) {

@@ -45,18 +45,4 @@ export class CreateRideRequestDto {
   @Length(0, 255)
   noteToDriver?: string;
 
-  @Type(() => Number)
-  @IsNumber()
-  @IsOptional()
-  estimatedFareVnd?: number;
-
-  @Type(() => Number)
-  @IsNumber()
-  @IsOptional()
-  estimatedFareJpy?: number;
-
-  @Type(() => Number)
-  @IsNumber()
-  @IsOptional()
-  rawFareVnd?: number;
 }

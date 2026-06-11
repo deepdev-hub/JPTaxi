@@ -1,159 +1,177 @@
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { getActiveRide, getFallbackRide, processRidePayment } from '../api/rides.js';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { getPaymentMethods } from '../api/customers.js';
+import { getActiveRide, processRidePayment } from '../api/rides.js';
 import PageShell from '../components/PageShell.jsx';
-import { calculateTripFareBreakdown, formatYen } from '../utils/fare.js';
 import { setLastInvoiceTripId } from '../utils/invoiceSession.js';
+import { buildPaymentPayload } from '../utils/payment.js';
 import '../styles/app-pages.css';
 
-const paymentMethodMap = {
-  'クレジットカード (**** 4821)': 'VISA',
-  現金: 'VISA',
-  PayPay: 'VNPAY',
-  'Apple Pay': 'VISA',
-};
+function formatVnd(amount) {
+  return `${new Intl.NumberFormat('vi-VN').format(Number(amount) || 0)} VND`;
+}
 
-function readSelectedDistance() {
-  try {
-    const route = JSON.parse(sessionStorage.getItem('jpTaxiSelectedRoute') || 'null');
-    return route?.routeMetrics?.distance ?? 4.8;
-  } catch {
-    return 4.8;
-  }
+function formatTime(value) {
+  if (!value) return '';
+  return new Intl.DateTimeFormat('ja-JP', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
 }
 
 export default function PaymentPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const [method, setMethod] = useState('クレジットカード (**** 4821)');
-  const [methodOpen, setMethodOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [trip, setTrip] = useState(null);
+  const [methods, setMethods] = useState([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState('');
-  const [trip, setTrip] = useState(() => getFallbackRide()?.trip ?? null);
-  const methods = ['クレジットカード (**** 4821)', '現金', 'PayPay', 'Apple Pay'];
-  const fare = calculateTripFareBreakdown(trip, readSelectedDistance());
-  const backPath =
-    searchParams.get('from') === 'driver' || localStorage.getItem('jpTaxiRole') === 'driver'
-      ? '/driver-ride-status'
-      : '/ride-status';
+  const selectedMethod = useMemo(
+    () => methods.find((item) => String(item.paymentMethodId) === selectedId) ?? null,
+    [methods, selectedId],
+  );
 
   useEffect(() => {
     let ignored = false;
-    getActiveRide()
-      .then((activeRide) => {
-        if (ignored || activeRide?.type !== 'trip') return;
-        setTrip(activeRide.data);
-        if (activeRide.data?.tripId) {
-          sessionStorage.setItem('jpTaxiTripId', String(activeRide.data.tripId));
-          setLastInvoiceTripId(activeRide.data.tripId);
+    Promise.all([getActiveRide(), getPaymentMethods()])
+      .then(([activeRide, paymentMethods]) => {
+        if (ignored) return;
+        if (activeRide?.type !== 'trip') {
+          setStatus('There is no active trip ready for payment.');
+          return;
         }
+        const nextTrip = activeRide.data;
+        const nextMethods = Array.isArray(paymentMethods) ? paymentMethods : [];
+        setTrip(nextTrip);
+        setMethods(nextMethods);
+        const preferred = nextMethods.find((item) => item.isDefault) ?? nextMethods[0];
+        setSelectedId(preferred ? String(preferred.paymentMethodId) : '');
+        sessionStorage.setItem('jpTaxiTripId', String(nextTrip.tripId));
       })
-      .catch(() => {
-        if (!ignored) setTrip(getFallbackRide()?.trip ?? null);
+      .catch((error) => setStatus(error.message || 'Unable to load payment details.'))
+      .finally(() => {
+        if (!ignored) setLoading(false);
       });
     return () => {
       ignored = true;
     };
   }, []);
 
-  function clearActiveRideState() {
-    sessionStorage.removeItem('jpTaxiRideRequestId');
-    sessionStorage.removeItem('jpTaxiTripId');
-    localStorage.removeItem('jpTaxiRideAccepted');
-    localStorage.removeItem('jpTaxiPaymentRequested');
-  }
-
-  async function confirmPayment() {
-    if (isSubmitting) return;
-    setIsSubmitting(true);
+  async function confirmPayment(event) {
+    event.preventDefault();
+    if (submitting) return;
     setStatus('');
-    setMethodOpen(false);
-
-    const tripId = Number(sessionStorage.getItem('jpTaxiTripId'));
-    if (Number.isFinite(tripId) && tripId > 0) setLastInvoiceTripId(tripId);
-
-    if (Number.isFinite(tripId) && tripId > 0 && backPath !== '/driver-ride-status') {
-      try {
-        await processRidePayment({
-          tripId,
-          paymentMethod: paymentMethodMap[method] || 'VISA',
-          password: 'password123',
-        });
-      } catch (error) {
-        setStatus(error.message || '支払い処理を完了できませんでした。');
-        setIsSubmitting(false);
-        return;
-      }
+    setSubmitting(true);
+    try {
+      const payload = buildPaymentPayload({
+        tripId: trip?.tripId,
+        paymentMethod: selectedMethod,
+        password,
+      });
+      await processRidePayment(payload);
+      setLastInvoiceTripId(trip.tripId);
+      navigate(`/invoice?tripId=${trip.tripId}`, { replace: true });
+    } catch (error) {
+      setStatus(error.message || 'Payment failed.');
+      setSubmitting(false);
     }
-
-    clearActiveRideState();
-    navigate(backPath === '/driver-ride-status' ? '/driver-ride-status' : '/driver-review');
   }
+
+  const request = trip?.rideRequest;
 
   return (
     <PageShell withFooter={false}>
       <main className="payment-complete-screen">
         <section className="receipt-card">
           <header className="receipt-header">
-            <span>Arrived Safely</span>
-            <h1>目的地に到着</h1>
-            <p>乗車記録と料金の確認</p>
+            <span>JP Taxi</span>
+            <h1>Trip payment</h1>
+            <p>Confirm the real trip details before paying.</p>
           </header>
 
           <div className="receipt-body">
-            <section className="receipt-route">
-              <div>
-                <span className="route-dot green"></span>
-                <div><strong>ホアンキエム湖</strong><small>18:30 出発</small></div>
-              </div>
-              <div>
-                <span className="route-dot dark"></span>
-                <div><strong>ロッテホテル ハノイ</strong><small>18:42 到着</small></div>
-              </div>
-            </section>
+            {loading ? <p role="status">Loading payment details...</p> : null}
+            {!loading && !trip ? <p className="empty-state">{status || 'No trip found.'}</p> : null}
+            {trip ? (
+              <form onSubmit={confirmPayment}>
+                <section className="receipt-route">
+                  <div>
+                    <span className="route-dot green" />
+                    <div>
+                      <strong>{request?.pickupAddress}</strong>
+                      <small>{formatTime(trip.startTime)} departure</small>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="route-dot dark" />
+                    <div>
+                      <strong>{request?.dropoffAddress}</strong>
+                      <small>{Number(trip.actualDistanceKm).toFixed(1)} km</small>
+                    </div>
+                  </div>
+                </section>
 
-            <section className="receipt-billing">
-              <div><span>基本運賃</span><strong>{formatYen(fare.baseFareJpy)}</strong></div>
-              <div><span>距離加算 ({fare.distanceKm.toFixed(1)} km)</span><strong>{formatYen(fare.distanceFareJpy)}</strong></div>
-              <div><span>予約手数料</span><strong>{formatYen(fare.reservationFeeJpy)}</strong></div>
-              <div className="receipt-total"><span>お支払い合計</span><strong>{formatYen(fare.totalJpy)}</strong></div>
-            </section>
+                <section className="receipt-billing">
+                  <div>
+                    <span>Trip fare</span>
+                    <strong>{formatVnd(trip.rawFareVnd ?? trip.finalFareVnd)}</strong>
+                  </div>
+                  <div className="receipt-total">
+                    <span>Total</span>
+                    <strong>{formatVnd(trip.finalFareVnd)}</strong>
+                  </div>
+                </section>
 
-            <section className="payment-preview">
-              <div><span>💳</span><strong>{method}</strong></div>
-              <button type="button" onClick={() => setMethodOpen(true)}>変更 〉</button>
-            </section>
+                <label className="payment-field">
+                  Saved payment method
+                  <select
+                    value={selectedId}
+                    onChange={(event) => setSelectedId(event.target.value)}
+                    required
+                  >
+                    <option value="">Select a payment method</option>
+                    {methods.map((item) => (
+                      <option key={item.paymentMethodId} value={item.paymentMethodId}>
+                        {item.brand} ending in {item.lastFour}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-            <div className="receipt-actions">
-              <Link className="payment-back-link" to={backPath}>戻る</Link>
-              <button className="pay-confirm" type="button" onClick={confirmPayment} disabled={isSubmitting}>
-                {isSubmitting ? '処理中...' : 'お支払いを確定する'}
-              </button>
-              <Link className="invoice-link" to="/invoice"><span>📄</span> 領収書を発行する</Link>
-              <Link className="support-link" to="/messages/driver">お問い合わせはこちら</Link>
-            </div>
-            {status ? <p className="payment-status-text">{status}</p> : null}
+                {!methods.length ? (
+                  <p className="empty-state">
+                    Add a payment method in <Link to="/user-info/payment">account settings</Link>.
+                  </p>
+                ) : null}
+
+                <label className="payment-field">
+                  Account password
+                  <input
+                    autoComplete="current-password"
+                    onChange={(event) => setPassword(event.target.value)}
+                    required
+                    type="password"
+                    value={password}
+                  />
+                </label>
+
+                {status ? <p className="payment-status-text" role="alert">{status}</p> : null}
+                <div className="receipt-actions">
+                  <Link className="payment-back-link" to="/ride-status">Back</Link>
+                  <button
+                    className="pay-confirm"
+                    disabled={submitting || !selectedMethod}
+                    type="submit"
+                  >
+                    {submitting ? 'Processing...' : 'Pay now'}
+                  </button>
+                </div>
+              </form>
+            ) : null}
           </div>
         </section>
-
-        <div className={`payment-method-backdrop ${methodOpen ? 'open' : ''}`} onClick={() => setMethodOpen(false)}>
-          <section className="payment-method-modal" role="dialog" aria-modal="true" aria-labelledby="payment-method-title" onClick={(event) => event.stopPropagation()}>
-            <header>
-              <h2 id="payment-method-title">支払い方法を選択</h2>
-              <button type="button" aria-label="閉じる" onClick={() => setMethodOpen(false)}>×</button>
-            </header>
-            <div className="payment-method-list">
-              {methods.map((item) => (
-                <button className={method === item ? 'selected' : ''} type="button" key={item} onClick={() => setMethod(item)}>
-                  <span>{item === '現金' ? '💵' : '💳'}</span>
-                  <strong>{item}</strong>
-                  <em>{method === item ? '選択中' : '選択'}</em>
-                </button>
-              ))}
-            </div>
-            <button className="payment-method-confirm" type="button" onClick={() => setMethodOpen(false)}>この方法にする</button>
-          </section>
-        </div>
       </main>
     </PageShell>
   );

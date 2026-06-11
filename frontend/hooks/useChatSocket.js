@@ -1,13 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { getChatSocketUrl } from '../api/messages.js';
+import { getAuthToken } from '../utils/session.js';
 
 function readActiveToken() {
-  const activeRole = sessionStorage.getItem('jpTaxiActiveRole') || localStorage.getItem('jpTaxiRole');
-  const roleToken = activeRole === 'driver'
-    ? localStorage.getItem('jpTaxiDriverToken')
-    : localStorage.getItem('jpTaxiCustomerToken');
-  return roleToken || localStorage.getItem('jpTaxiToken');
+  return getAuthToken();
 }
 
 export function useChatSocket({ conversationId, onNewMessage }) {

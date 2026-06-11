@@ -7,6 +7,7 @@ import { DriverBankAccount } from '../../entities/driver-bank-account.entity';
 import { Trip } from '../../entities/trip.entity';
 import { DriversController } from './drivers.controller';
 import { DriversService } from './drivers.service';
+import { DriverPayout } from '../../entities/driver-payout.entity';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { DriversService } from './drivers.service';
       DriverLicense,
       DriverBankAccount,
       Trip,
+      DriverPayout,
     ]),
   ],
   controllers: [DriversController],

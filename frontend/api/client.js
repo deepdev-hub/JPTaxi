@@ -4,15 +4,12 @@ const API_BASE =
   'http://localhost:3000/api';
 
 function getAuthHeaders() {
-  const activeRole = sessionStorage.getItem('jpTaxiActiveRole') || localStorage.getItem('jpTaxiRole');
-  const roleToken = activeRole === 'driver'
-    ? localStorage.getItem('jpTaxiDriverToken')
-    : localStorage.getItem('jpTaxiCustomerToken');
-  const token = roleToken || localStorage.getItem('jpTaxiToken');
+  const token = getAuthToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 export async function apiRequest(path, options = {}) {
+  const { responseType, ...fetchOptions } = options;
   const isFormData = options.body instanceof FormData;
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {
@@ -20,7 +17,7 @@ export async function apiRequest(path, options = {}) {
       ...getAuthHeaders(),
       ...options.headers,
     },
-    ...options,
+    ...fetchOptions,
   });
 
   if (!response.ok) {
@@ -35,11 +32,15 @@ export async function apiRequest(path, options = {}) {
   }
 
   const contentType = response.headers.get('content-type') || '';
+  if (responseType === 'blob') {
+    return response.blob();
+  }
   if (!contentType.includes('application/json')) {
-    return null;
+    return response.text();
   }
 
   return response.json();
 }
 
 export { API_BASE };
+import { getAuthToken } from '../utils/session.js';

@@ -1,4 +1,11 @@
-import { IsEnum, IsInt, IsString, MinLength } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Length,
+  MinLength,
+} from 'class-validator';
 import { PaymentMethodEnum } from '../../../entities/payment-transaction.entity';
 
 export class ProcessPaymentDto {
@@ -8,7 +15,15 @@ export class ProcessPaymentDto {
   @IsEnum(PaymentMethodEnum)
   paymentMethod: PaymentMethodEnum;
 
+  @IsOptional()
+  @IsInt()
+  paymentMethodId?: number;
+
   @IsString()
-  @MinLength(6, { message: 'Mật khẩu xác nhận phải có ít nhất 6 ký tự.' })
+  @Length(8, 100)
+  idempotencyKey: string;
+
+  @IsString()
+  @MinLength(6)
   password: string;
 }

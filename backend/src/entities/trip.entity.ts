@@ -25,6 +25,9 @@ export class Trip {
   @Column({ name: 'end_time', type: 'timestamptz', nullable: true })
   endTime: Date | null;
 
+  @Column({ name: 'payment_requested_at', type: 'timestamptz', nullable: true })
+  paymentRequestedAt: Date | null;
+
   @Column({ name: 'actual_distance_km', type: 'decimal', precision: 8, scale: 2 })
   actualDistanceKm: string;
 

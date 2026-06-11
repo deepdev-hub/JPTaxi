@@ -8,8 +8,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
-  decodeRatingComment,
-  encodeRatingComment,
   scoreLabelJa,
 } from '../../common/rating-comment.util';
 import { Customer } from '../../entities/customer.entity';
@@ -85,7 +83,8 @@ export class RatingsService {
       tripId,
       customerId: user.id,
       score: dto.score,
-      comment: encodeRatingComment(dto.tags ?? [], dto.comment ?? ''),
+      tags: dto.tags ?? [],
+      comment: dto.comment?.trim() || null,
     });
     const saved = await this.ratings.save(row);
     return {
@@ -112,7 +111,8 @@ export class RatingsService {
     }
 
     row.score = dto.score;
-    row.comment = encodeRatingComment(dto.tags ?? [], dto.comment ?? '');
+    row.tags = dto.tags ?? [];
+    row.comment = dto.comment?.trim() || null;
     const saved = await this.ratings.save(row);
     return {
       message: 'Đánh giá đã được cập nhật.',
@@ -170,6 +170,7 @@ export class RatingsService {
         'r.rating_id AS "ratingId"',
         'r.trip_id AS "tripId"',
         'r.score AS "score"',
+        'r.tags AS "tags"',
         'r.comment AS "comment"',
         'r.created_at AS "createdAt"',
         'c.first_name AS "customerFirstName"',
@@ -180,22 +181,21 @@ export class RatingsService {
       .offset(skip)
       .limit(take);
 
-    const rows = await qb.getRawMany<Record<string, string | number | Date>>();
+    const rows = await qb.getRawMany<
+      Record<string, string | number | Date | string[]>
+    >();
     const summary = await this.getDriverRatingsSummary(driverId);
 
     return {
       ...summary,
       items: rows.map((row) => {
-        const decoded = decodeRatingComment(
-          row.comment != null ? String(row.comment) : null,
-        );
         return {
           ratingId: Number(row.ratingId),
           tripId: Number(row.tripId),
           score: Number(row.score),
           scoreLabelJa: scoreLabelJa(Number(row.score)),
-          tags: decoded.tags,
-          comment: decoded.text || null,
+          tags: Array.isArray(row.tags) ? row.tags : [],
+          comment: row.comment != null ? String(row.comment) : null,
           createdAt: row.createdAt,
           customerName: `${row.customerLastName ?? ''} ${row.customerFirstName ?? ''}`.trim(),
         };
@@ -206,14 +206,13 @@ export class RatingsService {
   }
 
   private toRatingResponse(row: Rating) {
-    const decoded = decodeRatingComment(row.comment);
     return {
       ratingId: row.ratingId,
       tripId: row.tripId,
       score: row.score,
       scoreLabelJa: scoreLabelJa(row.score),
-      tags: decoded.tags,
-      comment: decoded.text || null,
+      tags: row.tags ?? [],
+      comment: row.comment,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

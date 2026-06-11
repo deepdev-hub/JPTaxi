@@ -1,3 +1,7 @@
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import { InjectRepository } from '@nestjs/typeorm';
 import {
   ConnectedSocket,
   MessageBody,
@@ -8,17 +12,15 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Injectable } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DriverLocationHistory } from '../../entities/driver-location-history.entity';
 import { Trip, TripStatusType } from '../../entities/trip.entity';
+import { corsOrigin } from '../../config/cors';
 
 @WebSocketGateway({
   cors: {
-    origin: '*',
+    origin: corsOrigin,
+    credentials: true,
   },
 })
 @Injectable()
@@ -26,8 +28,10 @@ export class RideGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  // Bản ghi các kết nối đang hoạt động (in-memory mapping)
-  private activeConnections = new Map<string, { userId: number; role: string; socketId: string }>();
+  private activeConnections = new Map<
+    string,
+    { userId: number; role: string; socketId: string }
+  >();
 
   constructor(
     private readonly jwtService: JwtService,
@@ -40,134 +44,114 @@ export class RideGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   async handleConnection(client: Socket) {
     try {
-      // 1. Lấy token JWT từ Header Auth hoặc Query String
       const token =
-        client.handshake.auth?.token?.split(' ')[1] ||
+        client.handshake.auth?.token?.replace(/^Bearer\s+/i, '') ||
         client.handshake.query?.token;
 
-      if (!token) {
+      if (!token || Array.isArray(token)) {
         client.disconnect();
         return;
       }
 
-      // 2. Xác thực và giải mã token
       const decoded = this.jwtService.verify(token, {
-        secret: this.configService.get<string>('JWT_SECRET', 'jp-taxi-dev-secret'),
+        secret: this.configService.getOrThrow<string>('JWT_SECRET'),
       });
+      const userId = Number(decoded.id);
+      const role = String(decoded.role);
+      if (!Number.isInteger(userId) || !['customer', 'driver'].includes(role)) {
+        client.disconnect();
+        return;
+      }
 
-      const userId = decoded.id;
-      const role = decoded.role || 'customer';
-
-      // 3. Lưu thông tin ánh xạ socket
-      this.activeConnections.set(client.id, { userId, role, socketId: client.id });
-
-      // 4. Cho socket tự động tham gia vào phòng cá nhân để nhận thông báo trực tiếp
+      this.activeConnections.set(client.id, {
+        userId,
+        role,
+        socketId: client.id,
+      });
       client.join(`${role}_${userId}`);
-      console.log(`[Socket.io] Client kết nối thành công: ${role} ID ${userId} (Socket: ${client.id})`);
-    } catch (err) {
-      console.error('[Socket.io] Xác thực kết nối thất bại:', err.message);
+    } catch {
       client.disconnect();
     }
   }
 
   handleDisconnect(client: Socket) {
-    const conn = this.activeConnections.get(client.id);
-    if (conn) {
-      console.log(`[Socket.io] Client ngắt kết nối: ${conn.role} ID ${conn.userId}`);
-      this.activeConnections.delete(client.id);
-    }
+    this.activeConnections.delete(client.id);
   }
 
-  /**
-   * Khách hàng hoặc tài xế tham gia vào phòng cuốc xe/chuyến đi
-   */
   @SubscribeMessage('joinRideRoom')
   async handleJoinRideRoom(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { requestId?: number; tripId?: number },
   ) {
-    if (data.requestId) {
-      client.join(`request_${data.requestId}`);
-      console.log(`[Socket.io] Socket ${client.id} tham gia phòng request_${data.requestId}`);
-    }
-    if (data.tripId) {
-      client.join(`trip_${data.tripId}`);
-      console.log(`[Socket.io] Socket ${client.id} tham gia phòng trip_${data.tripId}`);
-    }
+    if (data.requestId) client.join(`request_${data.requestId}`);
+    if (data.tripId) client.join(`trip_${data.tripId}`);
     return { status: 'success' };
   }
 
-  /**
-   * Tài xế phát sóng tọa độ GPS thời gian thực của họ
-   */
   @SubscribeMessage('updateDriverLocation')
   async handleUpdateDriverLocation(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { lat: number; lng: number },
   ) {
-    const conn = this.activeConnections.get(client.id);
-    if (!conn || conn.role !== 'driver') {
-      return { error: 'Unauthorized: Chỉ có tài xế mới có quyền cập nhật tọa độ.' };
+    const connection = this.activeConnections.get(client.id);
+    if (!connection || connection.role !== 'driver') {
+      return { error: 'Only drivers can update their location.' };
     }
 
-    const { userId: driverId } = conn;
     const { lat, lng } = data;
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng) ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180
+    ) {
+      return { error: 'Invalid coordinates.' };
+    }
 
-    // 1. Lưu lịch sử tọa độ GPS vào bảng `driver_location_history`
-    const history = this.locationRepo.create({
-      driverId,
-      latitude: lat.toString(),
-      longitude: lng.toString(),
-      recordedAt: new Date(),
+    const history = await this.locationRepo.save(
+      this.locationRepo.create({
+        driverId: connection.userId,
+        latitude: lat.toString(),
+        longitude: lng.toString(),
+        recordedAt: new Date(),
+      }),
+    );
+
+    const activeTrip = await this.tripRepo.findOne({
+      where: {
+        driverId: connection.userId,
+        status: TripStatusType.ongoing,
+      },
     });
-    await this.locationRepo.save(history);
-
-    // 2. Tìm chuyến đi đang hoạt động (ongoing) của tài xế này
-    const activeTrip = await this.tripRepo
-      .createQueryBuilder('trip')
-      .innerJoinAndSelect('trip.rideRequest', 'rideRequest')
-      .where('trip.driver_id = :driverId', { driverId })
-      .andWhere('trip.status = :status', { status: TripStatusType.ongoing })
-      .getOne();
 
     if (activeTrip) {
-      // 3. Tính khoảng cách địa lý (Euclid * 111) và ETA từ tọa độ tài xế đến điểm trả khách
-      const targetLat = parseFloat(activeTrip.rideRequest.dropoffLat);
-      const targetLng = parseFloat(activeTrip.rideRequest.dropoffLng);
-
-      const distance =
-        Math.sqrt(
-          Math.pow(targetLat - lat, 2) + Math.pow(targetLng - lng, 2),
-        ) * 111;
-
-      // Tính ETA dự kiến dựa trên vận tốc trung bình 30 km/h
-      const eta = Math.round((distance / 30) * 60);
-
-      // 4. Phát sóng thời gian thực đến room chuyến đi (trip room) cho khách hàng xem bản đồ cập nhật
       this.server.to(`trip_${activeTrip.tripId}`).emit('locationUpdated', {
-        driverId,
+        driverId: connection.userId,
         latitude: lat,
         longitude: lng,
-        distanceKm: distance.toFixed(2),
-        etaMinutes: eta,
+        recordedAt: history.recordedAt,
       });
     }
 
     return { status: 'success' };
   }
 
-  /**
-   * Các hàm phụ trợ (helper) phát tín hiệu từ các Service khác
-   */
-  emitToTrip(tripId: number, event: string, payload: any) {
+  emitToTrip(tripId: number, event: string, payload: unknown) {
     this.server.to(`trip_${tripId}`).emit(event, payload);
   }
 
-  emitToRequest(requestId: number, event: string, payload: any) {
+  emitToRequest(requestId: number, event: string, payload: unknown) {
     this.server.to(`request_${requestId}`).emit(event, payload);
   }
 
-  emitToUser(userId: number, role: 'customer' | 'driver', event: string, payload: any) {
+  emitToUser(
+    userId: number,
+    role: 'customer' | 'driver',
+    event: string,
+    payload: unknown,
+  ) {
     this.server.to(`${role}_${userId}`).emit(event, payload);
   }
 }

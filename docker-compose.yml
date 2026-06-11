@@ -1,18 +1,18 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: jptaxi-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: JPTaxi
+      POSTGRES_DB: postgres
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 123456
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - jptaxi_pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d JPTaxi"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 3s
       timeout: 5s
       retries: 10

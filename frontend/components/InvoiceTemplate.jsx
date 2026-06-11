@@ -3,77 +3,68 @@ function formatYen(amount) {
 }
 
 function formatVnd(amount) {
-  return `${new Intl.NumberFormat('vi-VN').format(amount ?? 0)} ₫`;
+  return `${new Intl.NumberFormat('vi-VN').format(amount ?? 0)} VND`;
 }
 
 function formatServiceDate(iso) {
-  if (!iso) return '—';
+  if (!iso) return '-';
   return new Intl.DateTimeFormat('ja-JP', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+    dateStyle: 'medium',
+    timeStyle: 'short',
   }).format(new Date(iso));
 }
 
-/**
- * Mẫu hóa đơn / biên lai điện tử — nhận payload từ GET /trips/:id/invoice
- */
 export default function InvoiceTemplate({ invoice, id = 'invoice-print-area' }) {
   if (!invoice) return null;
-
-  const { amounts, lineItems, trip, payment, seller } = invoice;
-  const vat = amounts?.jpy;
+  const { amounts, lineItems = [], trip = {}, payment, seller = {} } = invoice;
+  const vat = amounts?.jpy ?? {};
+  const paymentLabel = payment
+    ? `${payment.method}${payment.lastFour ? ` ending in ${payment.lastFour}` : ''}`
+    : '-';
 
   return (
     <div className="zip-invoice-paper" id={id}>
       <header>
-        <div className="invoice-brand">🚕 JP TAXI</div>
+        <div className="invoice-brand">JP TAXI</div>
         <div>
-          <h1>{invoice.title}</h1>
+          <h1>{invoice.title || 'Electronic receipt'}</h1>
           <p>NO. {invoice.invoiceNumber}</p>
-          {invoice.issued && (
-            <p className="invoice-issued-badge">発行済 · Đã xuất HĐ VAT</p>
-          )}
+          {invoice.issued ? <p className="invoice-issued-badge">Issued</p> : null}
         </div>
       </header>
 
       <div className="invoice-seller-block">
-        <span>{seller.legalNameJa}</span>
-        <small>{seller.taxCode} · {seller.addressJa}</small>
+        <span>{seller.legalName || seller.legalNameJa}</span>
+        <small>{seller.taxCode} · {seller.address || seller.addressJa}</small>
       </div>
 
       <div className="invoice-details-grid">
         <article>
-          <span>利用日時</span>
-          <strong>{formatServiceDate(trip.serviceTime)}</strong>
+          <span>Service time</span>
+          <strong>{formatServiceDate(trip.endTime || trip.startTime)}</strong>
         </article>
         <article>
-          <span>決済方法</span>
-          <strong>{payment?.methodLabelJa ?? '—'}</strong>
+          <span>Payment method</span>
+          <strong>{paymentLabel}</strong>
         </article>
         <article>
-          <span>乗車場所</span>
+          <span>Pickup</span>
           <strong>{trip.pickupAddress}</strong>
         </article>
         <article>
-          <span>降車場所</span>
+          <span>Drop-off</span>
           <strong>{trip.dropoffAddress}</strong>
         </article>
       </div>
 
       <table className="zip-invoice-table">
         <thead>
-          <tr>
-            <th>項目</th>
-            <th>金額 (JPY)</th>
-          </tr>
+          <tr><th>Item</th><th>Amount (JPY)</th></tr>
         </thead>
         <tbody>
           {lineItems.map((row) => (
             <tr key={row.code}>
-              <td>{row.labelJa}</td>
+              <td>{row.label || row.labelJa}</td>
               <td>{formatYen(row.amountJpy)}</td>
             </tr>
           ))}
@@ -81,29 +72,24 @@ export default function InvoiceTemplate({ invoice, id = 'invoice-print-area' }) 
       </table>
 
       <div className="invoice-vat-note">
-        <span>参考 (VND): {formatVnd(amounts.vnd.totalInclTax)}</span>
-        <span>Thuế GTGT {vat.vatRatePercent}% (đã bao gồm)</span>
+        <span>Reference: {formatVnd(amounts?.vnd?.totalInclTax)}</span>
+        <span>VAT {vat.vatRatePercent}% included</span>
       </div>
 
       <div className="invoice-summary">
-        <div className="qr-code" aria-hidden="true" title={invoice.qrPayload}>
-          <span></span>
-        </div>
         <div>
-          <span>領収金額 (税込)</span>
+          <span>Total</span>
           <strong>{formatYen(vat.totalInclTax)}</strong>
-          <small>
-            （内消費税{vat.vatRatePercent}%：{formatYen(vat.vatAmount)}）
-          </small>
+          <small>VAT: {formatYen(vat.vatAmount)}</small>
         </div>
       </div>
 
-      {invoice.buyer && (
+      {invoice.buyer ? (
         <footer className="invoice-buyer-footer">
-          <span>お客様</span>
+          <span>Customer</span>
           <strong>{invoice.buyer.name}</strong>
         </footer>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -1,90 +1,104 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Param,
   ParseIntPipe,
+  Post,
   Put,
   Query,
   Req,
   UseGuards,
-  Post,
 } from '@nestjs/common';
-import { DriversService } from './drivers.service';
-import { UpdateDriverProfileDto } from './dto/update-driver-profile.dto';
+import { AuthGuard } from '@nestjs/passport';
+import type { Request } from 'express';
+import type { JwtValidatedUser } from '../auth/jwt.strategy';
+import { ApplyDriverDto } from './dto/apply-driver.dto';
+import { SearchDriversQueryDto } from './dto/search-drivers.query.dto';
 import { UpdateBankAccountDto } from './dto/update-bank-account.dto';
 import { UpdateDriverDocumentsDto } from './dto/update-driver-documents.dto';
-import { SearchDriversQueryDto } from './dto/search-drivers.query.dto';
-import { ApplyDriverDto } from './dto/apply-driver.dto';
+import { UpdateDriverProfileDto } from './dto/update-driver-profile.dto';
+import { DriversService } from './drivers.service';
 
-
-import { RolesGuard } from '../../common/roles.guard';
-import { Roles } from '../../common/roles.decorator';
-import { JwtAuthGuard } from '../../common/jwt-auth.guard';
+type AuthedRequest = Request & { user: JwtValidatedUser };
 
 @Controller('drivers')
 export class DriversController {
   constructor(private readonly drivers: DriversService) {}
 
-  /** Tìm tài xế theo vị trí (lat/lng) và bộ lọc. Phải khai báo trước route `:driverId`. */
   @Get('search')
   searchDrivers(@Query() query: SearchDriversQueryDto) {
     return this.drivers.searchDrivers(query);
   }
 
-  @Get('profile-by-email')
-  getProfileByEmail(@Query('email') email: string) {
-    return this.drivers.getProfileByEmail(email);
+  @Get('me/profile')
+  @UseGuards(AuthGuard('jwt'))
+  getMyProfile(@Req() req: AuthedRequest) {
+    this.assertDriver(req.user);
+    return this.drivers.getProfile(req.user.id);
+  }
+
+  @Put('me/profile')
+  @UseGuards(AuthGuard('jwt'))
+  updateMyProfile(@Req() req: AuthedRequest, @Body() dto: UpdateDriverProfileDto) {
+    this.assertDriver(req.user);
+    return this.drivers.updateProfile(req.user.id, dto);
+  }
+
+  @Put('me/bank-account')
+  @UseGuards(AuthGuard('jwt'))
+  updateMyBank(@Req() req: AuthedRequest, @Body() dto: UpdateBankAccountDto) {
+    this.assertDriver(req.user);
+    return this.drivers.updateBankAccount(req.user.id, dto);
+  }
+
+  @Put('me/documents')
+  @UseGuards(AuthGuard('jwt'))
+  updateMyDocuments(@Req() req: AuthedRequest, @Body() dto: UpdateDriverDocumentsDto) {
+    this.assertDriver(req.user);
+    return this.drivers.updateDocuments(req.user.id, dto);
+  }
+
+  @Put('me/availability')
+  @UseGuards(AuthGuard('jwt'))
+  setAvailability(@Req() req: AuthedRequest, @Body('isOnline') isOnline: boolean) {
+    this.assertDriver(req.user);
+    return this.drivers.setAvailability(req.user.id, Boolean(isOnline));
+  }
+
+  @Get('me/payouts')
+  @UseGuards(AuthGuard('jwt'))
+  getPayouts(@Req() req: AuthedRequest) {
+    this.assertDriver(req.user);
+    return this.drivers.getPayouts(req.user.id);
+  }
+
+  @Post('me/apply')
+  @UseGuards(AuthGuard('jwt'))
+  apply(@Req() req: AuthedRequest, @Body() dto: ApplyDriverDto) {
+    this.assertDriver(req.user);
+    return this.drivers.applyToBeDriver(req.user.id, dto);
   }
 
   @Get(':driverId/profile')
-  getProfile(@Param('driverId', ParseIntPipe) driverId: number) {
-    return this.drivers.getProfile(driverId);
-  }
-
-  @Put(':driverId/profile')
-  updateProfile(
-    @Param('driverId', ParseIntPipe) driverId: number,
-    @Body() dto: UpdateDriverProfileDto,
-  ) {
-    return this.drivers.updateProfile(driverId, dto);
-  }
-
-  @Put(':driverId/bank-account')
-  updateBank(
-    @Param('driverId', ParseIntPipe) driverId: number,
-    @Body() dto: UpdateBankAccountDto,
-  ) {
-    return this.drivers.updateBankAccount(driverId, dto);
-  }
-
-  @Put(':driverId/documents')
-  updateDocuments(
-    @Param('driverId', ParseIntPipe) driverId: number,
-    @Body() dto: UpdateDriverDocumentsDto,
-  ) {
-    return this.drivers.updateDocuments(driverId, dto);
-  }
-
-// Logic kiểm tra điều kiện bắt buộc và gửi đơn xét duyệt
-  @Post('apply')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('driver')
-  async applyToBeDriver(
-    @Req() req: { user: { id: number } },
-    @Body() applyDto: ApplyDriverDto,
-  ) {
-    return this.drivers.applyToBeDriver(req.user.id, applyDto);
+  getPublicProfile(@Param('driverId', ParseIntPipe) driverId: number) {
+    return this.drivers.getPublicProfile(driverId);
   }
 
   @Post('admin/approve/:driverId')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
-  async approveDriver(
+  @UseGuards(AuthGuard('jwt'))
+  approveDriver(
+    @Req() req: AuthedRequest,
     @Param('driverId', ParseIntPipe) driverId: number,
     @Body('status') status: 'approved' | 'rejected',
     @Body('reason') reason?: string,
   ) {
+    if (req.user.role !== 'admin') throw new ForbiddenException();
     return this.drivers.approveDriver(driverId, status, reason);
+  }
+
+  private assertDriver(user: JwtValidatedUser) {
+    if (user.role !== 'driver') throw new ForbiddenException('Driver account required');
   }
 }

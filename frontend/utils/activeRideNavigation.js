@@ -4,15 +4,6 @@ function pathMatches(pathname, prefixes) {
   return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
-function readPaymentRequestTripId() {
-  try {
-    const paymentRequest = JSON.parse(localStorage.getItem('jpTaxiPaymentRequested') || 'null');
-    return Number(paymentRequest?.tripId) || null;
-  } catch {
-    return null;
-  }
-}
-
 function buildStoredRoute(activeRide) {
   const trip = activeRide?.data;
   const request = trip?.rideRequest;
@@ -53,11 +44,7 @@ function buildStoredRoute(activeRide) {
 }
 
 export function hasOutstandingPayment(activeRide) {
-  if (activeRide?.type !== 'trip') return false;
-  if (activeRide.paymentRequested) return true;
-
-  const activeTripId = Number(activeRide.data?.tripId);
-  return Boolean(activeTripId && readPaymentRequestTripId() === activeTripId);
+  return activeRide?.type === 'trip' && Boolean(activeRide.paymentRequested);
 }
 
 export function syncActiveRideSession(activeRide) {

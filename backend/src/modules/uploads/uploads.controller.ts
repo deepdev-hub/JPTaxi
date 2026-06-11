@@ -1,11 +1,15 @@
 import {
   Controller,
+  ForbiddenException,
   Param,
   ParseEnumPipe,
   Post,
+  Req,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { existsSync, mkdirSync } from 'fs';
@@ -48,6 +52,7 @@ const imageFileFilter = (
 };
 
 @Controller('uploads')
+@UseGuards(AuthGuard('jwt'))
 export class UploadsController {
   @Post('avatar')
   @UseInterceptors(
@@ -91,10 +96,14 @@ export class UploadsController {
     }),
   )
   uploadDriverDocument(
+    @Req() req: Request & { user: { role: string } },
     @Param('documentType', new ParseEnumPipe(DriverDocumentType))
     documentType: DriverDocumentType,
     @UploadedFile() file: Express.Multer.File,
   ) {
+    if (req.user.role !== 'driver') {
+      throw new ForbiddenException('Driver account required');
+    }
     if (!file) {
       return { url: null };
     }

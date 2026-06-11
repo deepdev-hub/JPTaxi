@@ -14,9 +14,14 @@ import { Vehicle } from '../../entities/vehicle.entity';
 import { RideRequestDispatch } from '../../entities/ride-request-dispatch.entity';
 import { Conversation } from '../../entities/conversation.entity';
 import { AuthModule } from '../auth/auth.module';
+import { CustomerPaymentMethod } from '../../entities/customer-payment-method.entity';
+import { DriverBankAccount } from '../../entities/driver-bank-account.entity';
+import { PricingRule } from '../../entities/pricing-rule.entity';
+import { MapModule } from '../map/map.module';
 
 @Module({
   imports: [
+    MapModule,
     TypeOrmModule.forFeature([
       RideRequest,
       Trip,
@@ -28,6 +33,9 @@ import { AuthModule } from '../auth/auth.module';
       Vehicle,
       RideRequestDispatch,
       Conversation,
+      CustomerPaymentMethod,
+      DriverBankAccount,
+      PricingRule,
     ]),
     AuthModule,
   ],

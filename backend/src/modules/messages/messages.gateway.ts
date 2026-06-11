@@ -11,12 +11,16 @@ import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
+import { corsOrigin } from '../../config/cors';
 
 type Recipient = { role: 'customer' | 'driver'; id: number };
 
 @WebSocketGateway({
   namespace: '/chat',
-  cors: { origin: '*' },
+  cors: {
+    origin: corsOrigin,
+    credentials: true,
+  },
 })
 @Injectable()
 export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -33,20 +37,24 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
   async handleConnection(client: Socket) {
     try {
       const token =
-        client.handshake.auth?.token?.split(' ')[1] ||
+        client.handshake.auth?.token?.replace(/^Bearer\s+/i, '') ||
         client.handshake.query?.token;
 
-      if (!token) {
+      if (!token || Array.isArray(token)) {
         client.disconnect();
         return;
       }
 
       const decoded = this.jwtService.verify(token, {
-        secret: this.configService.get<string>('JWT_SECRET', 'jp-taxi-dev-secret'),
+        secret: this.configService.getOrThrow<string>('JWT_SECRET'),
       });
 
-      const userId = decoded.id as number;
-      const role = (decoded.role as string) || 'customer';
+      const userId = Number(decoded.id);
+      const role = String(decoded.role);
+      if (!Number.isInteger(userId) || !['customer', 'driver'].includes(role)) {
+        client.disconnect();
+        return;
+      }
 
       this.connections.set(client.id, { userId, role });
       client.join(this.userRoom(role, userId));

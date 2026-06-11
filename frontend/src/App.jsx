@@ -14,35 +14,33 @@ import LoginPage from '../pages/LoginPage.jsx';
 import MessagesPage from '../pages/MessagesPage.jsx';
 import PaymentPage from '../pages/PaymentPage.jsx';
 import RegisterPage from '../pages/RegisterPage.jsx';
-import ReservationSummaryPage from '../pages/ReservationSummaryPage.jsx';
 import RideConfirmPage from '../pages/RideConfirmPage.jsx';
 import RideStatusPage from '../pages/RideStatusPage.jsx';
 import SearchCarPage from '../pages/SearchCarPage.jsx';
 import UserInfoPage from '../pages/UserInfoPage.jsx';
 import RuntimePageTranslator from '../i18n/RuntimePageTranslator.jsx';
 import ActiveRideNavigationGuard from '../components/ActiveRideNavigationGuard.jsx';
+import { getAuthRole, getAuthToken } from '../utils/session.js';
 
 function getLoggedInRole() {
-  return sessionStorage.getItem('jpTaxiActiveRole') || localStorage.getItem('jpTaxiRole');
+  return getAuthRole();
 }
 
-function getRoleToken(role) {
-  if (role === 'driver') return localStorage.getItem('jpTaxiDriverToken') || localStorage.getItem('jpTaxiToken');
-  if (role === 'customer') return localStorage.getItem('jpTaxiCustomerToken') || localStorage.getItem('jpTaxiToken');
-  return localStorage.getItem('jpTaxiToken');
+function getRoleToken() {
+  return getAuthToken();
 }
 
 function ProtectedRoute({ children, role }) {
   const location = useLocation();
   const currentRole = getLoggedInRole();
-  const token = getRoleToken(role || currentRole);
+  const token = getRoleToken();
 
   if ((!currentRole && !role) || !token) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  if (role) {
-    sessionStorage.setItem('jpTaxiActiveRole', role);
+  if (role && currentRole !== role) {
+    return <Navigate to={currentRole === 'driver' ? '/driver-home' : '/home'} replace />;
   }
 
   return children;
@@ -50,7 +48,7 @@ function ProtectedRoute({ children, role }) {
 
 function RoleHomeRedirect() {
   const currentRole = getLoggedInRole();
-  const token = getRoleToken(currentRole);
+  const token = getRoleToken();
   if (!currentRole || !token) {
     return <Navigate to="/login" replace />;
   }
@@ -94,13 +92,11 @@ export default function App() {
           <Route path="/timxe.html" element={<Navigate to="/search-car" replace />} />
           <Route path="/location-search" element={<ProtectedRoute role="customer"><LocationSearchPage /></ProtectedRoute>} />
           <Route path="/timkiemvachondiadiem.html" element={<Navigate to="/location-search" replace />} />
-          <Route path="/reservation-summary" element={<ProtectedRoute role="customer"><ReservationSummaryPage /></ProtectedRoute>} />
-          <Route path="/test1.html" element={<Navigate to="/reservation-summary" replace />} />
           <Route path="/ride-confirm" element={<ProtectedRoute role="customer"><RideConfirmPage /></ProtectedRoute>} />
           <Route path="/Xacnhancuocxe.html" element={<Navigate to="/xacnhancuocxe" replace />} />
           <Route path="/ride-status" element={<ProtectedRoute role="customer"><RideStatusPage /></ProtectedRoute>} />
           <Route path="/trangthaicho.html" element={<Navigate to="/ride-status" replace />} />
-          <Route path="/payment" element={<ProtectedRoute><PaymentPage /></ProtectedRoute>} />
+          <Route path="/payment" element={<ProtectedRoute role="customer"><PaymentPage /></ProtectedRoute>} />
           <Route path="/thanhtoan.html" element={<Navigate to="/payment" replace />} />
           <Route path="/invoice" element={<ProtectedRoute><InvoicePage /></ProtectedRoute>} />
           <Route path="/xuathoadon.html" element={<Navigate to="/invoice" replace />} />
