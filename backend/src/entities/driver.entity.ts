@@ -91,4 +91,10 @@ export class Driver {
     enumName: 'driver_japanese_level_enum',
   })
   driverJapaneseLevel: DriverJapaneseLevelEnum;
+
+  @Column({ name: 'is_online', type: 'boolean', default: false })
+  isOnline: boolean;
+
+  @Column({ name: 'last_seen_at', type: 'timestamptz', nullable: true })
+  lastSeenAt: Date | null;
 }

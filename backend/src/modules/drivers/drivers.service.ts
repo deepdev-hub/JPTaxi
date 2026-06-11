@@ -18,6 +18,7 @@ import {
 import { ApplyDriverDto } from './dto/apply-driver.dto';
 import { LicenseTypeEnum } from '../../entities/driver-license.entity';
 import { VehicleTypeEnum } from '../../entities/vehicle.entity';
+import { DriverPayout } from '../../entities/driver-payout.entity';
 
 const JAPANESE_LEVEL_RANK: Record<DriverJapaneseLevelEnum, number> = {
   [DriverJapaneseLevelEnum.N5]: 1,
@@ -54,6 +55,8 @@ export class DriversService {
     private readonly banks: Repository<DriverBankAccount>,
     @InjectRepository(Trip)
     private readonly trips: Repository<Trip>,
+    @InjectRepository(DriverPayout)
+    private readonly payouts: Repository<DriverPayout>,
   ) {}
 
   private mapTripStatus(s: TripStatusType): string {
@@ -140,6 +143,8 @@ export class DriversService {
       gender: d.gender,
       idNumber: d.idNumber,
       avatarUrl: d.avatarUrl,
+      isOnline: d.isOnline,
+      lastSeenAt: d.lastSeenAt,
       vehicle: vehicle
         ? {
             brand: vehicle.brand,
@@ -191,6 +196,43 @@ export class DriversService {
         endTime: t.endTime,
         rating: ratingByTrip.get(t.tripId) ?? null,
       })),
+    };
+  }
+
+  async getPublicProfile(driverId: number) {
+    const d = await this.drivers.findOne({ where: { driverId } });
+    if (!d || d.status !== DriverStatusType.approved) {
+      throw new NotFoundException();
+    }
+    const vehicle = await this.vehicles.findOne({ where: { driverId } });
+    const rating = await this.trips
+      .createQueryBuilder('t')
+      .innerJoin('rating', 'r', 'r.trip_id = t.trip_id')
+      .select('AVG(r.score)::float', 'averageRating')
+      .addSelect('COUNT(*)::int', 'ratingCount')
+      .where('t.driver_id = :driverId', { driverId })
+      .getRawOne<{ averageRating: string | null; ratingCount: string }>();
+
+    return {
+      driverId,
+      name: `${d.lastName} ${d.firstName}`.trim(),
+      avatarUrl: d.avatarUrl,
+      japaneseLevel: d.driverJapaneseLevel,
+      isOnline: d.isOnline,
+      lastSeenAt: d.lastSeenAt,
+      vehicle: vehicle
+        ? {
+            brand: vehicle.brand,
+            color: vehicle.color,
+            licensePlate: vehicle.licensePlate,
+            vehicleType: vehicle.vehicleType,
+          }
+        : null,
+      averageRating:
+        rating?.averageRating == null
+          ? null
+          : Math.round(Number(rating.averageRating) * 100) / 100,
+      ratingCount: Number(rating?.ratingCount ?? 0),
     };
   }
 
@@ -261,6 +303,31 @@ export class DriversService {
     return this.getProfile(driverId);
   }
 
+  async setAvailability(driverId: number, isOnline: boolean) {
+    const driver = await this.drivers.findOne({ where: { driverId } });
+    if (!driver) throw new NotFoundException('Driver not found');
+    driver.isOnline = isOnline;
+    driver.lastSeenAt = new Date();
+    await this.drivers.save(driver);
+    return { driverId, isOnline, lastSeenAt: driver.lastSeenAt };
+  }
+
+  async getPayouts(driverId: number) {
+    const items = await this.payouts.find({
+      where: { driverId },
+      order: { payoutId: 'DESC' },
+    });
+    const totals = items.reduce(
+      (sum, item) => ({
+        grossFareVnd: sum.grossFareVnd + item.grossFareVnd,
+        commissionVnd: sum.commissionVnd + item.commissionVnd,
+        netAmountVnd: sum.netAmountVnd + item.amountVnd,
+      }),
+      { grossFareVnd: 0, commissionVnd: 0, netAmountVnd: 0 },
+    );
+    return { items, totals };
+  }
+
   private createDriverSearchQuery(
     q: SearchDriversQueryDto,
     radiusKm: number,
@@ -290,6 +357,7 @@ export class DriversService {
         'rt.driver_id = d.driver_id',
       )
       .where('d.status = :approved', { approved: DriverStatusType.approved })
+      .andWhere('d.is_online = true')
       .andWhere(
         `latest.recorded_at >= NOW() - (INTERVAL '1 minute' * CAST(:maxAgeMin AS integer))`,
         { maxAgeMin },

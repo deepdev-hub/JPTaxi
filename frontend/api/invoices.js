@@ -5,9 +5,22 @@ export function getTripInvoice(tripId) {
 }
 
 export function issueTripInvoice(tripId, payload = {}) {
-  return apiRequest(`/trips/${tripId}/invoice/issue`, {
+  return apiRequest('/invoice/issue', {
     method: 'POST',
     auth: true,
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ tripId, ...payload }),
+  });
+}
+
+export function downloadTripInvoicePdf(tripId) {
+  return apiRequest(`/invoice/pdf?tripId=${encodeURIComponent(tripId)}`, {
+    responseType: 'blob',
+  });
+}
+
+export function emailTripInvoice(tripId, payload = {}) {
+  return apiRequest('/invoice/email', {
+    method: 'POST',
+    body: JSON.stringify({ tripId, ...payload }),
   });
 }

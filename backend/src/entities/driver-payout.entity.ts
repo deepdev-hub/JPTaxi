@@ -20,6 +20,12 @@ export class DriverPayout {
   @Column({ name: 'amount_vnd', type: 'int' })
   amountVnd: number;
 
+  @Column({ name: 'gross_fare_vnd', type: 'int' })
+  grossFareVnd: number;
+
+  @Column({ name: 'commission_vnd', type: 'int' })
+  commissionVnd: number;
+
   @Column({
     type: 'enum',
     enum: PayoutStatusType,

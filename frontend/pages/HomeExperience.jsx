@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getActiveDriverRide, getActiveRide } from '../api/rides.js';
+import { getCustomerProfile, getDriverProfile, resolveAssetUrl } from '../api/accounts.js';
+import { getSavedPlaces } from '../api/customers.js';
 import InteractiveRouteMap from '../components/InteractiveRouteMap.jsx';
 import PageShell from '../components/PageShell.jsx';
 import Topbar from '../components/Topbar.jsx';
 import '../styles/app-pages.css';
 import { buildSelectedRoute, geocodePlace, getCurrentPosition } from '../utils/routePlanner.js';
-import { readSavedPlaces } from '../utils/savedPlaces.js';
 import { getRideContinuationPath, syncActiveRideSession } from '../utils/activeRideNavigation.js';
 
 const userHome = {
@@ -15,7 +16,6 @@ const userHome = {
     <>
       <Link to="/home">ホーム</Link>
       <Link to="/user-info">アカウント</Link>
-      <img className="topbar-avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&q=80" alt="" />
     </>
   ),
   heading: 'こんにちは！',
@@ -23,11 +23,7 @@ const userHome = {
   searchTo: '/location-search',
   searchTitle: 'どこへ行きますか？',
   searchCopy: '目的地・住所を入力、または履歴から選択',
-  quickItems: [
-    { icon: '🕒', title: '職場', copy: '123 Duong ABC' },
-    { icon: '🏠', title: '自宅', copy: '456 Duong XYZ' },
-    { icon: '⭐', title: 'お気に', copy: 'もっと見る', to: '/location-search' },
-  ],
+  quickItems: [],
   fastTo: '/location-search',
   fastTitle: '今すぐタクシーを呼ぶ',
   fastCopy: 'すぐに予約',
@@ -39,7 +35,6 @@ const driverHome = {
     <>
       <Link to="/driver-home">ホーム</Link>
       <Link to="/driver-info/basic">ドライバー情報</Link>
-      <img className="topbar-avatar" src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=80" alt="" />
     </>
   ),
   heading: 'こんにちは！',
@@ -61,12 +56,18 @@ export default function HomeExperience({ mode = 'user' }) {
   const navigate = useNavigate();
   const content = mode === 'driver' ? driverHome : userHome;
   const isUserMode = mode !== 'driver';
-  const [savedPlaces] = useState(readSavedPlaces);
+  const [savedPlaces, setSavedPlaces] = useState([]);
+  const [profile, setProfile] = useState(null);
   const [quickLoading, setQuickLoading] = useState(null);
   const [rideContinuationPath, setRideContinuationPath] = useState(null);
 
   const quickItems = isUserMode
-    ? Object.entries(savedPlaces).map(([key, place]) => ({ ...place, key }))
+    ? savedPlaces.map((place) => ({
+        ...place,
+        key: place.savedPlaceId,
+        title: place.label,
+        icon: place.type === 'home' ? '⌂' : place.type === 'work' ? '■' : '★',
+      }))
     : content.quickItems;
 
   useEffect(() => {
@@ -84,6 +85,28 @@ export default function HomeExperience({ mode = 'user' }) {
         if (!ignored) setRideContinuationPath(null);
       });
 
+    return () => {
+      ignored = true;
+    };
+  }, [isUserMode]);
+
+  useEffect(() => {
+    let ignored = false;
+    const load = isUserMode
+      ? Promise.all([getCustomerProfile(), getSavedPlaces()])
+      : Promise.all([getDriverProfile(), Promise.resolve([])]);
+    load
+      .then(([nextProfile, places]) => {
+        if (ignored) return;
+        setProfile(nextProfile);
+        setSavedPlaces(Array.isArray(places) ? places : []);
+      })
+      .catch(() => {
+        if (!ignored) {
+          setProfile(null);
+          setSavedPlaces([]);
+        }
+      });
     return () => {
       ignored = true;
     };
@@ -136,7 +159,18 @@ export default function HomeExperience({ mode = 'user' }) {
   return (
     <PageShell>
       <main className="home-window">
-        <Topbar brandTo={content.brandTo} actions={content.actions} />
+        <Topbar
+          brandTo={content.brandTo}
+          actions={(
+            <>
+              <Link to={content.brandTo}>Home</Link>
+              <Link to={isUserMode ? '/user-info/profile' : '/driver-info/basic'}>Account</Link>
+              {profile?.avatarUrl
+                ? <img className="topbar-avatar" src={resolveAssetUrl(profile.avatarUrl)} alt="" />
+                : <span className="topbar-avatar" />}
+            </>
+          )}
+        />
 
         <section className="zip-home-hero">
           <InteractiveRouteMap
@@ -167,6 +201,12 @@ export default function HomeExperience({ mode = 'user' }) {
             </Link>
 
             <div className="zip-quick-row">
+              {isUserMode && !quickItems.length ? (
+                <Link className="zip-quick-box" to="/user-info/profile">
+                  <span>+</span>
+                  <div><strong>Saved places</strong><small>No saved places yet</small></div>
+                </Link>
+              ) : null}
               {quickItems.map((item) => {
                 const body = (
                   <>

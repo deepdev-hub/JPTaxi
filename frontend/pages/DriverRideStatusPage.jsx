@@ -1,234 +1,131 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getDriverProfile, resolveAssetUrl } from '../api/accounts.js';
-import { fetchCustomerProfile } from '../api/customers.js';
-import { cancelDriverRide, requestDriverPayment, updateDriverLocation } from '../api/rides.js';
+import { getDrivingRoute } from '../api/maps.js';
+import {
+  cancelDriverRide,
+  getActiveDriverRide,
+  requestDriverPayment,
+  updateDriverLocation,
+} from '../api/rides.js';
 import InteractiveRouteMap from '../components/InteractiveRouteMap.jsx';
 import PageShell from '../components/PageShell.jsx';
 import ProfileAvatarSlot from '../components/ProfileAvatarSlot.jsx';
 import Topbar from '../components/Topbar.jsx';
-import { DEFAULT_MAP_LOCATION, watchBrowserLocation } from '../utils/geolocation.js';
-import { fetchDrivingRoute } from '../utils/routePlanner.js';
 import { setLastInvoiceTripId } from '../utils/invoiceSession.js';
 import '../styles/app-pages.css';
 
-const fallbackRoute = {
-  destination: {
-    name: 'ロッテホテル ハノイ',
-    address: '54 Liễu Giai, Ba Đình, Hà Nội',
-    position: [21.03205, 105.81283],
-  },
-  pickup: {
-    name: 'ホアンキエム湖',
-    position: [21.02878, 105.85204],
-  },
-  routeMetrics: {
-    duration: '12分',
-    distance: '4.8 km',
-  },
-  routePath: [
-    [21.02878, 105.85204],
-    [21.02812, 105.85046],
-    [21.02672, 105.84817],
-    [21.02482, 105.85672],
-    [21.02621, 105.84666],
-    [21.02942, 105.83628],
-    [21.03162, 105.82084],
-    [21.03205, 105.81283],
-  ],
-  passenger: null,
-};
-
-function readSelectedRoute() {
-  try {
-    const rawRoute = window.sessionStorage.getItem('jpTaxiSelectedRoute');
-    if (!rawRoute) return fallbackRoute;
-
-    const parsedRoute = JSON.parse(rawRoute);
-    const pickupPosition = parsedRoute.pickup?.position;
-    const destinationPosition = parsedRoute.destination?.position;
-
-    if (!Array.isArray(pickupPosition) || !Array.isArray(destinationPosition)) {
-      return fallbackRoute;
-    }
-
-    return {
-      ...fallbackRoute,
-      ...parsedRoute,
-      routePath: Array.isArray(parsedRoute.routePath) ? parsedRoute.routePath : fallbackRoute.routePath,
-      routeMetrics: {
-        ...fallbackRoute.routeMetrics,
-        ...parsedRoute.routeMetrics,
-      },
-    };
-  } catch {
-    return fallbackRoute;
-  }
+function watchDriverLocation(onLocation) {
+  if (!navigator.geolocation) return () => {};
+  const id = navigator.geolocation.watchPosition(
+    ({ coords }) => onLocation([coords.latitude, coords.longitude]),
+    () => {},
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 },
+  );
+  return () => navigator.geolocation.clearWatch(id);
 }
 
 export default function DriverRideStatusPage() {
   const navigate = useNavigate();
-  const [selectedRoute] = useState(readSelectedRoute);
+  const [ride, setRide] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [driverLocation, setDriverLocation] = useState(null);
-  const [driverRoutePath, setDriverRoutePath] = useState(selectedRoute.routePath);
-  const [driverProfile, setDriverProfile] = useState(null);
-  const [passengerProfile, setPassengerProfile] = useState(null);
-  const [isCancellingRide, setIsCancellingRide] = useState(false);
-  const [cancelError, setCancelError] = useState('');
-  const passenger = selectedRoute.passenger ?? {};
-  const passengerName = passenger.name || 'お客様';
-  const passengerPhone = passenger.phone || '連絡先を確認中';
-  const passengerAvatar = resolveAssetUrl(passengerProfile?.avatarUrl ?? passenger.avatarUrl);
-  const driverName = [driverProfile?.lastName, driverProfile?.firstName].filter(Boolean).join(' ')
-    || driverProfile?.email
-    || 'Driver';
-  const driverAvatar = resolveAssetUrl(driverProfile?.avatarUrl);
-  const customerPeerId = passenger.customerId ?? passenger.customer_id;
-  const requestId = Number(sessionStorage.getItem('jpTaxiRideRequestId')) || null;
-  const messageLink = Number.isFinite(Number(customerPeerId))
-    ? `/messages/customer?peerId=${customerPeerId}${requestId ? `&requestId=${requestId}` : ''}`
-    : '/messages/customer';
-  const driverMapPosition = useMemo(
-    () => (driverLocation ? [driverLocation.lat, driverLocation.lng] : selectedRoute.pickup.position),
-    [driverLocation, selectedRoute.pickup.position],
-  );
-  const routePoints = [
-    {
-      key: 'pickup',
-      label: selectedRoute.pickup.name,
-      meta: '乗車地',
-      time: '現在',
-      position: selectedRoute.pickup.position,
-      type: 'pickup',
-    },
-    {
-      key: 'destination',
-      label: selectedRoute.destination.name,
-      meta: selectedRoute.destination.address,
-      time: `約${selectedRoute.routeMetrics.duration}`,
-      position: selectedRoute.destination.position,
-      type: 'destination',
-    },
-  ];
-
-  useEffect(() => watchBrowserLocation(
-    (location) => {
-      if (location.isFallback) return;
-      const nextLocation = { lat: location.latitude, lng: location.longitude };
-      setDriverLocation(nextLocation);
-      updateDriverLocation(nextLocation).catch(() => {
-        /* keep the live map usable when location syncing is temporarily unavailable */
-      });
-    },
-    { fallback: DEFAULT_MAP_LOCATION, emitFallback: false },
-  ), []);
+  const [routePath, setRoutePath] = useState([]);
+  const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!driverLocation) {
-      setDriverRoutePath(selectedRoute.routePath);
-      return undefined;
+    let stopped = false;
+    getDriverProfile().then((value) => {
+      if (!stopped) setProfile(value);
+    }).catch(() => {});
+    async function poll() {
+      try {
+        const active = await getActiveDriverRide();
+        if (stopped) return;
+        if (active?.type === 'trip') {
+          setRide(active.data);
+          sessionStorage.setItem('jpTaxiTripId', String(active.data.tripId));
+        } else {
+          setRide(null);
+          setStatus('No active trip.');
+        }
+      } catch (error) {
+        if (!stopped) setStatus(error.message || 'Unable to load the active trip.');
+      }
     }
-
-    const controller = new AbortController();
-    const fallbackPath = [
-      driverMapPosition,
-      selectedRoute.pickup.position,
-      ...selectedRoute.routePath.slice(1),
-    ];
-
-    Promise.all([
-      fetchDrivingRoute(driverMapPosition, selectedRoute.pickup.position, { signal: controller.signal }),
-      fetchDrivingRoute(selectedRoute.pickup.position, selectedRoute.destination.position, { signal: controller.signal }),
-    ])
-      .then(([pickupRoute, destinationRoute]) => setDriverRoutePath([
-        ...pickupRoute.routePath,
-        ...destinationRoute.routePath.slice(1),
-      ]))
-      .catch((error) => {
-        if (error.name !== 'AbortError') setDriverRoutePath(fallbackPath);
-      });
-
-    return () => controller.abort();
-  }, [driverLocation, driverMapPosition, selectedRoute.destination.position, selectedRoute.pickup.position, selectedRoute.routePath]);
-
-  useEffect(() => {
-    let ignored = false;
-    getDriverProfile()
-      .then((profile) => {
-        if (!ignored) setDriverProfile(profile);
-      })
-      .catch(() => {
-        if (!ignored) setDriverProfile(null);
-      });
+    poll();
+    const timer = window.setInterval(poll, 2500);
+    const stopLocation = watchDriverLocation((position) => {
+      setDriverLocation(position);
+      updateDriverLocation({ lat: position[0], lng: position[1] }).catch(() => {});
+    });
     return () => {
-      ignored = true;
+      stopped = true;
+      stopLocation();
+      window.clearInterval(timer);
     };
   }, []);
 
-  useEffect(() => {
-    let ignored = false;
-    const customerId = passenger.customerId ?? passenger.customer_id;
-    if (!customerId || passenger.avatarUrl) return undefined;
+  const request = ride?.rideRequest;
+  const pickup = request ? [Number(request.pickupLat), Number(request.pickupLng)] : null;
+  const destination = request ? [Number(request.dropoffLat), Number(request.dropoffLng)] : null;
 
-    fetchCustomerProfile(customerId)
-      .then((profile) => {
-        if (!ignored) setPassengerProfile(profile);
-      })
-      .catch(() => {
-        if (!ignored) setPassengerProfile(null);
+  useEffect(() => {
+    if (!pickup || !destination) {
+      setRoutePath([]);
+      return;
+    }
+    const start = driverLocation || pickup;
+    Promise.all([
+      getDrivingRoute(start, pickup),
+      getDrivingRoute(pickup, destination),
+    ])
+      .then(([toPickup, tripRoute]) => setRoutePath([
+        ...toPickup.path,
+        ...tripRoute.path.slice(1),
+      ]))
+      .catch((error) => {
+        setRoutePath([]);
+        setStatus(error.message || 'Unable to load the route.');
       });
-    return () => {
-      ignored = true;
-    };
-  }, [passenger.avatarUrl, passenger.customerId, passenger.customer_id]);
+  }, [driverLocation, request?.requestId]);
+
+  const routePoints = useMemo(() => request ? [
+    { key: 'pickup', label: request.pickupAddress, position: pickup, type: 'pickup' },
+    { key: 'destination', label: request.dropoffAddress, position: destination, type: 'destination' },
+  ] : [], [request]);
 
   async function requestPayment() {
-    const tripId = Number(sessionStorage.getItem('jpTaxiTripId'));
-    if (!Number.isFinite(tripId) || tripId <= 0) {
-      navigate('/xacnhancuocxe', { replace: true });
-      return;
-    }
-
-    setLastInvoiceTripId(tripId);
+    if (!ride || busy) return;
+    setBusy(true);
+    setStatus('');
     try {
-      const result = await requestDriverPayment(tripId);
-      localStorage.setItem('jpTaxiPaymentRequested', JSON.stringify({
-        tripId,
-        requestedAt: result?.requestedAt || Date.now(),
-      }));
-    } catch {
-      localStorage.setItem('jpTaxiPaymentRequested', JSON.stringify({
-        tripId,
-        requestedAt: Date.now(),
-      }));
+      await requestDriverPayment(ride.tripId);
+      setLastInvoiceTripId(ride.tripId);
+      setStatus('Payment request sent to the customer.');
+    } catch (error) {
+      setStatus(error.message || 'Unable to request payment.');
+    } finally {
+      setBusy(false);
     }
-    navigate('/driver-invoice');
   }
 
-  async function cancelRideByDriver() {
-    if (isCancellingRide) return;
-
-    const tripId = Number(sessionStorage.getItem('jpTaxiTripId'));
-    if (!Number.isFinite(tripId) || tripId <= 0) {
-      navigate('/xacnhancuocxe', { replace: true });
-      return;
-    }
-
-    setIsCancellingRide(true);
-    setCancelError('');
-
+  async function cancelRide() {
+    if (!ride || busy) return;
+    setBusy(true);
     try {
-      await cancelDriverRide(tripId);
-      sessionStorage.removeItem('jpTaxiRideRequestId');
+      await cancelDriverRide(ride.tripId);
       sessionStorage.removeItem('jpTaxiTripId');
-      localStorage.removeItem('jpTaxiRideAccepted');
-      localStorage.removeItem('jpTaxiPaymentRequested');
       navigate('/xacnhancuocxe', { replace: true });
     } catch (error) {
-      setCancelError(error.message || '乗車をキャンセルできませんでした。');
-      setIsCancellingRide(false);
+      setStatus(error.message || 'Unable to cancel the trip.');
+      setBusy(false);
     }
   }
+
+  const passenger = ride?.passenger;
+  const profileName = [profile?.lastName, profile?.firstName].filter(Boolean).join(' ') || profile?.email || '';
 
   return (
     <PageShell>
@@ -237,58 +134,43 @@ export default function DriverRideStatusPage() {
           brandTo="/driver-home"
           actions={(
             <>
-              <Link to="/driver-home">ホーム</Link>
-              <Link to="/messages/customer">メッセージ</Link>
-              <Link to="/driver-info/basic">アカウント</Link>
-              <ProfileAvatarSlot slot="topbar" className="driver-avatar-top" src={driverAvatar} fallbackText={driverName} />
+              <Link to="/driver-home">Home</Link>
+              <Link to="/driver-info/basic">Account</Link>
+              <ProfileAvatarSlot slot="topbar" src={resolveAssetUrl(profile?.avatarUrl)} fallbackText={profileName} />
             </>
           )}
         />
-
-        <section className="driver-tracking-map">
-          <InteractiveRouteMap
-            alternateRoutePath={[]}
-            className="tracking-route-map"
-            compact
-            currentLocation={driverMapPosition}
-            driverLocation={driverLocation ? driverMapPosition : null}
-            route={routePoints}
-            routePath={driverRoutePath}
-            routeSummary={`${selectedRoute.routeMetrics.distance} - ${selectedRoute.routeMetrics.duration}`}
-            scrollWheelZoom
-            showCurrentLocation={false}
-            showDriver={Boolean(driverLocation)}
-            showDetails={false}
-          />
-
-          <section className="driver-tracking-card">
-            <div className="tracking-eta-header">
-              <div>
-                <span>到着予定時間</span>
-                <strong>あと {selectedRoute.routeMetrics.duration}</strong>
+        {!ride ? <p className="empty-state">{status || 'Loading active trip...'}</p> : (
+          <section className="driver-tracking-map">
+            <InteractiveRouteMap
+              alternateRoutePath={[]}
+              className="tracking-route-map"
+              currentLocation={driverLocation}
+              driverLocation={driverLocation}
+              route={routePoints}
+              routePath={routePath}
+              showCurrentLocation={Boolean(driverLocation)}
+              showDetails={false}
+              showDriver={Boolean(driverLocation)}
+            />
+            <section className="driver-tracking-card">
+              <div className="tracking-passenger-row">
+                <ProfileAvatarSlot src={resolveAssetUrl(passenger?.avatarUrl)} fallbackText={passenger?.name || ''} />
+                <div>
+                  <strong>{passenger?.name || 'Passenger'}</strong>
+                  <small>{request?.pickupAddress}</small>
+                  <em>{passenger?.phone}</em>
+                </div>
               </div>
-              <em>{selectedRoute.routeMetrics.distance}</em>
-            </div>
-
-            <div className="tracking-passenger-row">
-                <ProfileAvatarSlot slot="tracking" src={passengerAvatar} fallbackText={passengerName} />
-              <div>
-                <strong>{passengerName} 様</strong>
-                <small>{selectedRoute.pickup.name}で待機中</small>
-                <em>{passengerPhone}</em>
+              <div className="tracking-actions">
+                <Link className="tracking-call" to={`/messages/customer?peerId=${passenger?.customerId || ''}`}>Message</Link>
+                <button className="tracking-message" disabled={busy} onClick={requestPayment} type="button">Request payment</button>
+                <button className="tracking-cancel-ride" disabled={busy} onClick={cancelRide} type="button">Cancel trip</button>
               </div>
-            </div>
-
-            <div className="tracking-actions">
-              <Link className="tracking-call" to={messageLink}>連絡する</Link>
-              <button className="tracking-message" type="button" onClick={requestPayment}>請求書を発行</button>
-              <button className="tracking-cancel-ride" type="button" onClick={cancelRideByDriver} disabled={isCancellingRide}>
-                {isCancellingRide ? 'キャンセル中...' : '乗車をキャンセル'}
-              </button>
-            </div>
-            {cancelError ? <p className="tracking-error-text">{cancelError}</p> : null}
+              {status ? <p className="tracking-error-text">{status}</p> : null}
+            </section>
           </section>
-        </section>
+        )}
       </main>
     </PageShell>
   );

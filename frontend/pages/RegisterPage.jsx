@@ -4,6 +4,7 @@ import { registerAccount } from '../api/auth.js';
 import PageShell from '../components/PageShell.jsx';
 import PasswordField from '../components/PasswordField.jsx';
 import Topbar from '../components/Topbar.jsx';
+import { persistAuthSession } from '../utils/session.js';
 import '../styles/auth.css';
 
 export default function RegisterPage() {
@@ -84,7 +85,7 @@ export default function RegisterPage() {
           license_number: pendingDriver.licenseNumber,
           license_type: pendingDriver.licenseType || 'B',
           license_expiry_date: pendingDriver.licenseExpiryDate || undefined,
-          vehicle_brand: pendingDriver.vehicleBrand || 'Toyota',
+          vehicle_brand: pendingDriver.vehicleBrand,
           vehicle_color: pendingDriver.vehicleColor || '',
           vehicle_type: pendingDriver.vehicleType || '4',
           license_plate: pendingDriver.licensePlate,
@@ -98,18 +99,12 @@ export default function RegisterPage() {
 
       const result = await registerAccount(payload);
       const role = result?.role === 'driver' ? 'driver' : 'customer';
-      localStorage.setItem('jpTaxiToken', result.token);
-      localStorage.setItem('jpTaxiRole', role);
-      localStorage.setItem('jpTaxiUserEmail', form.email.trim());
-      localStorage.setItem(role === 'driver' ? 'jpTaxiDriverToken' : 'jpTaxiCustomerToken', result.token);
-      localStorage.setItem(role === 'driver' ? 'jpTaxiDriverEmail' : 'jpTaxiCustomerEmail', form.email.trim());
-      sessionStorage.setItem('jpTaxiActiveRole', role);
-      if (result?.user?.customerId) {
-        localStorage.setItem('jpTaxiCustomerId', String(result.user.customerId));
-      }
-      if (result?.user?.driverId) {
-        localStorage.setItem('jpTaxiDriverId', String(result.user.driverId));
-      }
+      persistAuthSession({
+        token: result.token,
+        role,
+        user: result.user,
+        email: form.email.trim(),
+      });
       sessionStorage.removeItem('jpTaxiPendingDriverRegistration');
       navigate(role === 'driver' ? '/driver-home' : '/home', { replace: true });
     } catch (error) {

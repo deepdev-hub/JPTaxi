@@ -18,9 +18,7 @@
   position: relative;
   min-height: 560px;
   overflow: hidden;
-  background:
-    linear-gradient(90deg, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.88) 35%, rgba(255,255,255,0.35) 68%, rgba(255,255,255,0.12) 100%),
-    url("https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=1800&q=80") center / cover;
+  background: linear-gradient(120deg, #ffffff 0%, #eef6ff 55%, #dcecff 100%);
   border: 1px solid var(--line);
   border-radius: 12px;
 }
@@ -429,9 +427,7 @@
 .available-screen {
   min-height: 100vh;
   padding: 24px;
-  background:
-    linear-gradient(rgba(255,255,255,0.22), rgba(255,255,255,0.48)),
-    url("https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=1800&q=80") center / cover;
+  background: linear-gradient(135deg, #e9f3ff, #f8fbff);
 }
 
 .available-card {
@@ -486,9 +482,7 @@
   position: relative;
   min-height: 520px;
   overflow: hidden;
-  background:
-    linear-gradient(rgba(255,255,255,0.18), rgba(255,255,255,0.38)),
-    url("https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=1800&q=80") center / cover;
+  background: linear-gradient(135deg, #edf5ff, #ffffff);
   border: 1px solid var(--line);
   border-radius: 12px;
 }
@@ -3465,9 +3459,7 @@ button.zip-fast-button {
   overflow: hidden;
   height: calc(100vh - 156px);
   min-height: calc(100vh - 156px);
-  background:
-    linear-gradient(rgba(255,255,255,0.12), rgba(255,255,255,0.16)),
-    url("https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=1800&q=80") center / cover;
+  background: linear-gradient(135deg, #e8f2ff, #f8fbff);
 }
 
 .driver-dispatch-map .dispatch-route-map,

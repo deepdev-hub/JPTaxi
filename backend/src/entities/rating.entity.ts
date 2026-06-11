@@ -25,6 +25,9 @@ export class Rating {
   @Column({ type: 'text', nullable: true })
   comment: string | null;
 
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
+  tags: string[];
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

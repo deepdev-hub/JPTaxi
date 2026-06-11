@@ -335,9 +335,7 @@
   min-height: 0;
   height: min(720px, calc(100vh - 118px));
   overflow: hidden;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.16)),
-    url("https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=1400&q=80") center / cover;
+  background: linear-gradient(135deg, #e8f2ff, #f7fbff 48%, #dcecff);
   border: 1px solid #e5eaf0;
   border-radius: 4px;
   position: sticky;

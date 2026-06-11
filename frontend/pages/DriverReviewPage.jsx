@@ -15,21 +15,10 @@ function scoreLabel(score) {
   return '素晴らしい!';
 }
 
-function saveReview(review) {
-  let reviews = [];
-  try {
-    reviews = JSON.parse(localStorage.getItem('jpTaxiDriverRatings') || '[]');
-  } catch {
-    reviews = [];
-  }
-  const next = reviews.filter((item) => String(item.tripId) !== String(review.tripId));
-  localStorage.setItem('jpTaxiDriverRatings', JSON.stringify([review, ...next]));
-}
-
 export default function DriverReviewPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const tripId = searchParams.get('tripId') || sessionStorage.getItem('jpTaxiTripId') || getLastInvoiceTripId() || 'demo';
+  const tripId = searchParams.get('tripId') || sessionStorage.getItem('jpTaxiTripId') || getLastInvoiceTripId() || null;
   const [score, setScore] = useState(0);
   const [hoverScore, setHoverScore] = useState(null);
   const [selectedTags, setSelectedTags] = useState([]);
@@ -38,18 +27,21 @@ export default function DriverReviewPage() {
   const [status, setStatus] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const displayScore = hoverScore ?? score;
-  const label = '未評価';
+  const label = scoreLabel(displayScore);
   const displayScoreText = displayScore.toFixed(1);
-  const driverName = reviewContext?.driver?.name || '田中 ドライバー';
+  const driverName = reviewContext?.driver?.name || '';
   const vehicle = reviewContext?.driver?.vehicle;
   const vehicleLabel = vehicle
     ? `${vehicle.brand || ''} ${vehicle.color || ''} • ${vehicle.licensePlate || ''}`.trim()
-    : 'Toyota Vios • 30A-123.45';
-  const driverInitial = driverName.trim().charAt(0) || '田';
+    : '';
+  const driverInitial = driverName.trim().charAt(0) || '?';
 
   useEffect(() => {
     const numericTripId = Number(tripId);
-    if (!Number.isFinite(numericTripId) || numericTripId <= 0) return undefined;
+    if (!Number.isFinite(numericTripId) || numericTripId <= 0) {
+      setStatus('No completed trip was selected.');
+      return undefined;
+    }
 
     let ignored = false;
     getReviewContext(numericTripId)
@@ -83,26 +75,20 @@ export default function DriverReviewPage() {
       return;
     }
 
-    const review = {
-      tripId,
-      score,
-      tags: selectedTags,
-      comment: comment.trim(),
-      createdAt: new Date().toISOString(),
-    };
     const numericTripId = Number(tripId);
+    if (!Number.isFinite(numericTripId) || numericTripId <= 0) {
+      setStatus('No completed trip was selected.');
+      return;
+    }
 
     setIsSubmitting(true);
     setStatus('');
     try {
-      if (Number.isFinite(numericTripId) && numericTripId > 0) {
-        await submitTripRating(
-          numericTripId,
-          { score, tags: selectedTags, comment: comment.trim() },
-          { update: Boolean(reviewContext?.existingRating) },
-        );
-      }
-      saveReview(review);
+      await submitTripRating(
+        numericTripId,
+        { score, tags: selectedTags, comment: comment.trim() },
+        { update: Boolean(reviewContext?.existingRating) },
+      );
     } catch (error) {
       setStatus(error.message || '評価を送信できませんでした。');
       setIsSubmitting(false);

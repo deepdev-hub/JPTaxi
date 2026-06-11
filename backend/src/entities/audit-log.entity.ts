@@ -3,6 +3,7 @@ import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeor
 export enum UserTypeEnum {
   customer = 'customer',
   driver = 'driver',
+  admin = 'admin',
 }
 
 @Entity({ name: 'audit_log' })

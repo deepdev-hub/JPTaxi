@@ -11,6 +11,9 @@ export class SearchHistory {
   @Column({ name: 'search_text', type: 'varchar', length: 255 })
   searchText: string;
 
+  @Column({ type: 'jsonb', nullable: true })
+  metadata: Record<string, unknown> | null;
+
   @CreateDateColumn({ name: 'searched_at', type: 'timestamptz' })
   searchedAt: Date;
 }

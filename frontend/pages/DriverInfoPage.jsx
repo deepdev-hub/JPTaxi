@@ -14,7 +14,9 @@ import {
   uploadAvatar,
   uploadDriverDocument,
 } from '../api/accounts.js';
+import { getDriverPayouts, setDriverAvailability } from '../api/drivers.js';
 import { getDriverRatings, getDriverRatingsSummary, getPublicDriverRatingSummary } from '../api/ratings.js';
+import { changePassword } from '../api/auth.js';
 import {
   getStoredProfileLanguage,
   languageOptions,
@@ -23,6 +25,7 @@ import {
   setStoredProfileLanguage,
 } from '../i18n/profileLanguage.js';
 import '../styles/app-pages.css';
+import { clearAuthSession } from '../utils/session.js';
 
 const driverMenu = [
   { id: 'basic', icon: '👤', to: '/driver-info/basic' },
@@ -41,71 +44,46 @@ const documentUploadTypes = {
   registrationPaper: 'registration_paper',
 };
 
-const defaultVisaCard = {
-  holderName: 'JP Taxi Driver',
-  number: '4111111111114821',
-  expiry: '12/29',
-  securityCode: '',
-  billingAddress: '',
-};
-
-function normalizeCardNumber(value) {
-  return String(value ?? '').replace(/\D/g, '').slice(0, 16);
-}
-
-function formatCardNumber(value) {
-  return normalizeCardNumber(value).replace(/(.{4})/g, '$1 ').trim();
-}
-
-function formatExpiry(value) {
-  const digits = String(value ?? '').replace(/\D/g, '').slice(0, 4);
-  return digits.length <= 2 ? digits : `${digits.slice(0, 2)}/${digits.slice(2)}`;
-}
-
-function getCardLastFour(value) {
-  return normalizeCardNumber(value).slice(-4) || '4821';
-}
-
-const fallbackDriver = {
+const emptyDriver = {
   lastName: '',
   firstName: '',
-  nationality: 'Japan',
-  phone: '+84123456789',
-  email: localStorage.getItem('jpTaxiDriverEmail') || localStorage.getItem('jpTaxiUserEmail') || '',
-  japaneseLevel: 'N2',
-  birthDate: '1990-01-01',
-  gender: 'Male',
+  nationality: '',
+  phone: '',
+  email: '',
+  japaneseLevel: '',
+  birthDate: '',
+  gender: 'Other',
   idNumber: '',
   avatarUrl: '',
   vehicle: {
-    brand: 'Toyota',
-    color: 'White',
-    licensePlate: '30A-123.45',
-    vehicleType: '4',
-    manufactureYear: new Date().getFullYear(),
+    brand: '',
+    color: '',
+    licensePlate: '',
+    vehicleType: '',
+    manufactureYear: null,
     vehiclePhotoUrl: '',
     registrationPaperUrl: '',
   },
   licenses: [],
   documents: {},
   bankAccount: {
-    bankName: 'Vietcombank',
-    accountNumber: '00000291',
-    accountHolder: 'TARO YAMADA',
+    bankName: '',
+    accountNumber: '',
+    accountHolder: '',
   },
   trips: [],
   stats: null,
 };
 
-function normalizeProfile(profile = fallbackDriver) {
+function normalizeProfile(profile = {}) {
   const hasStats = profile.stats && typeof profile.stats === 'object';
   return {
-    ...fallbackDriver,
+    ...emptyDriver,
     ...profile,
-    birthDate: profile.birthDate ? String(profile.birthDate).slice(0, 10) : fallbackDriver.birthDate,
+    birthDate: profile.birthDate ? String(profile.birthDate).slice(0, 10) : emptyDriver.birthDate,
     avatarUrl: resolveAssetUrl(profile.avatarUrl),
-    vehicle: profile.vehicle || fallbackDriver.vehicle,
-    bankAccount: profile.bankAccount || fallbackDriver.bankAccount,
+    vehicle: profile.vehicle || emptyDriver.vehicle,
+    bankAccount: profile.bankAccount || emptyDriver.bankAccount,
     licenses: Array.isArray(profile.licenses) ? profile.licenses : [],
     documents: profile.documents || {},
     trips: Array.isArray(profile.trips) ? profile.trips : [],
@@ -212,36 +190,15 @@ function formatEmailDisplayName(value) {
 }
 
 function getDisplayName(profile, fallback = '') {
-  const storedEmail = localStorage.getItem('jpTaxiDriverEmail') || localStorage.getItem('jpTaxiUserEmail') || '';
   const name = [profile.lastName, profile.firstName]
     .map((part) => String(part ?? '').trim())
     .filter(Boolean)
     .join(' ');
-  const emailName = formatEmailDisplayName(profile.email || storedEmail);
+  const emailName = formatEmailDisplayName(profile.email);
   return name
     || emailName
     || fallback
     || '';
-}
-
-function readStoredDriverRatings() {
-  let stored = [];
-  try {
-    stored = JSON.parse(localStorage.getItem('jpTaxiDriverRatings') || '[]');
-  } catch {
-    stored = [];
-  }
-
-  if (!Array.isArray(stored)) return [];
-  return stored
-    .filter((item) => Number(item?.score) > 0)
-    .map((item) => ({
-      tripId: item.tripId,
-      score: Number(item.score),
-      tags: Array.isArray(item.tags) ? item.tags : [],
-      comment: item.comment || null,
-      createdAt: item.createdAt || null,
-    }));
 }
 
 function readProfileTripRatings(trips = []) {
@@ -283,14 +240,14 @@ export default function DriverInfoPage() {
   const { section } = useParams();
   const requestedSection = section === 'payment' ? 'payout' : section;
   const activeSection = driverMenu.some((item) => item.id === requestedSection) ? requestedSection : 'basic';
-  const [online, setOnline] = useState(true);
+  const [online, setOnline] = useState(false);
   const [modal, setModal] = useState(null);
-  const [profile, setProfile] = useState(fallbackDriver);
-  const [bankAccount, setBankAccount] = useState(fallbackDriver.bankAccount);
+  const [profile, setProfile] = useState(emptyDriver);
+  const [bankAccount, setBankAccount] = useState(emptyDriver.bankAccount);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [language, setLanguage] = useState(getStoredProfileLanguage);
-  const [visaCard, setVisaCard] = useState(defaultVisaCard);
+  const [payouts, setPayouts] = useState({ items: [], totals: {} });
   const [avatarFileName, setAvatarFileName] = useState('');
   const [avatarFile, setAvatarFile] = useState(null);
   const [croppedAvatarFile, setCroppedAvatarFile] = useState(null);
@@ -303,6 +260,11 @@ export default function DriverInfoPage() {
   const [selectedHistory, setSelectedHistory] = useState(null);
   const [historyFilter, setHistoryFilter] = useState('all');
   const [historyDate, setHistoryDate] = useState('');
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
   const text = profileText[language] || profileText.ja;
   const common = text.common;
   const driverText = text.driver;
@@ -313,13 +275,19 @@ export default function DriverInfoPage() {
     async function loadProfile() {
       setLoading(true);
       try {
-        const data = normalizeProfile(await getDriverProfile());
+        const [profileResult, payoutResult] = await Promise.all([
+          getDriverProfile(),
+          getDriverPayouts(),
+        ]);
+        const data = normalizeProfile(profileResult);
         if (!ignore) {
           setProfile(data);
           setBankAccount(data.bankAccount);
+          setOnline(Boolean(data.isOnline));
+          setPayouts(payoutResult);
         }
       } catch (error) {
-        if (!ignore) setStatus(error.message || text.status.driverDemo);
+        if (!ignore) setStatus(error.message || text.status.driverLoadFailed);
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -328,7 +296,7 @@ export default function DriverInfoPage() {
     return () => {
       ignore = true;
     };
-  }, [text.status.driverDemo]);
+  }, [text.status.driverLoadFailed]);
 
   useEffect(() => {
     if (loading) return undefined;
@@ -338,8 +306,7 @@ export default function DriverInfoPage() {
       const result = await getDriverRatings({ limit: 50 }).catch(() => null);
       const apiRatings = Array.isArray(result?.items) ? result.items : [];
       const profileRatings = readProfileTripRatings(profile.trips);
-      const storedRatings = readStoredDriverRatings();
-      const mergedRatings = mergeRatings(apiRatings, profileRatings, storedRatings);
+      const mergedRatings = mergeRatings(apiRatings, profileRatings);
       const summary = await (
         profile.driverId
           ? getPublicDriverRatingSummary(profile.driverId)
@@ -387,7 +354,7 @@ export default function DriverInfoPage() {
   const fullName = getDisplayName(profile, common.unregistered);
   const avatarInitial = fullName.slice(0, 1) || profile.lastName.slice(0, 1);
   const avatar = profile.avatarUrl;
-  const vehicle = profile.vehicle || fallbackDriver.vehicle;
+  const vehicle = profile.vehicle || emptyDriver.vehicle;
   const primaryLicense = profile.licenses[0] || {};
   const vehiclePhoto = resolveAssetUrl(profile.documents?.vehiclePhoto || vehicle.vehiclePhotoUrl);
   const driverDocuments = [
@@ -400,10 +367,10 @@ export default function DriverInfoPage() {
   const completedDocumentCount = driverDocuments.filter((item) => item.url).length;
   const isCountedHistoryTrip = (trip) => trip.status !== 'cancelled' && trip.status !== 'cancelled_by_admin';
   const historyStatsTrips = profile.trips.filter(isCountedHistoryTrip);
-  const fallbackCompletedTrips = historyStatsTrips.length;
-  const fallbackTotalSales = historyStatsTrips.reduce((sum, trip) => sum + parseNumericAmount(trip.finalFareJpy), 0);
-  const completedTrips = fallbackCompletedTrips || Number(profile.stats?.completedTrips ?? 0);
-  const totalSales = fallbackTotalSales || Number(profile.stats?.totalSalesJpy ?? 0);
+  const historyCompletedTrips = historyStatsTrips.length;
+  const historyTotalSales = historyStatsTrips.reduce((sum, trip) => sum + parseNumericAmount(trip.finalFareJpy), 0);
+  const completedTrips = historyCompletedTrips || Number(profile.stats?.completedTrips ?? 0);
+  const totalSales = historyTotalSales || Number(profile.stats?.totalSalesJpy ?? 0);
   const visibleRatings = mergeRatings(ratings, readProfileTripRatings(profile.trips));
   const visibleRatingsSummary = summarizeRatings(visibleRatings);
   const profileRatingsSummary = profile.stats && Number(profile.stats.ratingCount ?? 0) > 0
@@ -428,7 +395,6 @@ export default function DriverInfoPage() {
     account: driverText.modal.account,
     avatar: common.changeImage,
     vehicle: driverText.modal.vehicle,
-    visaCard: common.addVisaCard,
     password: driverText.modal.password,
     bank: driverText.modal.bank,
     rating: `${driverText.ratingLabel} - ${common.details}`,
@@ -442,6 +408,17 @@ export default function DriverInfoPage() {
 
   function updateBankField(field, value) {
     setBankAccount((current) => ({ ...current, [field]: value }));
+  }
+
+  async function updateAvailability(isOnline) {
+    const previous = online;
+    setOnline(isOnline);
+    try {
+      await setDriverAvailability(isOnline);
+    } catch (error) {
+      setOnline(previous);
+      setStatus(error.message || 'Unable to update availability.');
+    }
   }
 
   function handleAvatarChange(event) {
@@ -504,20 +481,6 @@ export default function DriverInfoPage() {
     }
   }
 
-  function updateVisaCardField(field, value) {
-    setVisaCard((current) => ({
-      ...current,
-      [field]:
-        field === 'number'
-          ? normalizeCardNumber(value)
-          : field === 'expiry'
-            ? formatExpiry(value)
-            : field === 'securityCode'
-              ? String(value ?? '').replace(/\D/g, '').slice(0, 4)
-              : value,
-    }));
-  }
-
   async function saveProfile() {
     try {
       const updated = await updateDriverProfile({
@@ -557,18 +520,30 @@ export default function DriverInfoPage() {
     }
   }
 
+  async function savePassword() {
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setStatus('New password confirmation does not match.');
+      return;
+    }
+    try {
+      await changePassword({
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+      });
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setModal(null);
+      setStatus(text.status.dbSaved);
+    } catch (error) {
+      setStatus(error.message || 'Unable to change password.');
+    }
+  }
+
   function changeLanguage(nextLanguage) {
     setLanguage(setStoredProfileLanguage(nextLanguage));
   }
 
   function handleLogout() {
-    localStorage.removeItem('jpTaxiToken');
-    localStorage.removeItem('jpTaxiRole');
-    localStorage.removeItem('jpTaxiUserEmail');
-    localStorage.removeItem('jpTaxiCustomerId');
-    localStorage.removeItem('jpTaxiDriverId');
-    localStorage.removeItem('jpTaxiFallbackRide');
-    localStorage.removeItem('jpTaxiPaymentRequested');
+    clearAuthSession();
     sessionStorage.removeItem('jpTaxiRideRequestId');
     sessionStorage.removeItem('jpTaxiTripId');
     sessionStorage.removeItem('jpTaxiSelectedRoute');
@@ -702,9 +677,25 @@ export default function DriverInfoPage() {
         <section className="panel zip-profile-panel narrow-panel">
           <h2 className="panel-title">{driverText.payoutTitle}</h2>
           <div className="setting-list">
-            <button className="account-card" type="button" onClick={() => setModal('visaCard')}><strong>{common.visaCard}</strong><span>{common.visaCard} **** {getCardLastFour(visaCard.number)}</span></button>
-            <button className="account-card" type="button" onClick={() => setModal('bank')}><strong>{driverText.bank}</strong><span>{bankAccount.bankName} **** {bankAccount.accountNumber.slice(-4)}</span></button>
-            <button className="submit-button profile-save-button" type="button" onClick={() => setModal('visaCard')}>{common.addVisaCard}</button>
+            {bankAccount?.accountNumber ? (
+              <button className="account-card" type="button" onClick={() => setModal('bank')}>
+                <strong>{driverText.bank}</strong>
+                <span>{bankAccount.bankName} **** {bankAccount.accountNumber.slice(-4)}</span>
+              </button>
+            ) : <p className="empty-state">No bank account configured.</p>}
+            <article className="account-card">
+              <strong>Gross fare</strong>
+              <span>{Number(payouts.totals?.grossFareVnd || 0).toLocaleString('vi-VN')} VND</span>
+            </article>
+            <article className="account-card">
+              <strong>Commission</strong>
+              <span>{Number(payouts.totals?.commissionVnd || 0).toLocaleString('vi-VN')} VND</span>
+            </article>
+            <article className="account-card">
+              <strong>Net payout</strong>
+              <span>{Number(payouts.totals?.netAmountVnd || 0).toLocaleString('vi-VN')} VND</span>
+            </article>
+            {!payouts.items?.length ? <p className="empty-state">No payouts yet.</p> : null}
             <button className="submit-button profile-save-button" type="button" onClick={() => setModal('bank')}>{common.edit}</button>
           </div>
         </section>
@@ -745,7 +736,7 @@ export default function DriverInfoPage() {
               <strong>{online ? driverText.online : driverText.offline}</strong>
               <small>{online ? driverText.onlineCopy : driverText.offlineCopy}</small>
             </span>
-            <span className="switch"><input type="checkbox" checked={online} onChange={(event) => setOnline(event.target.checked)} /><span></span></span>
+            <span className="switch"><input type="checkbox" checked={online} onChange={(event) => updateAvailability(event.target.checked)} /><span></span></span>
           </label>
 
           <section className="panel zip-profile-panel driver-basic-card">
@@ -939,23 +930,6 @@ export default function DriverInfoPage() {
               <p className="modal-copy">{driverText.modal.vehicleDbCopy}</p>
             </div>
           )}
-          {modal === 'visaCard' && (
-            <div className="modal-form zip-modal-form visa-card-form">
-              <div className="visa-card-preview">
-                <span>VISA</span>
-                <strong>**** **** **** {getCardLastFour(visaCard.number)}</strong>
-                <small>{visaCard.holderName || common.cardHolder} · {visaCard.expiry || 'MM/YY'}</small>
-              </div>
-              <div className="form-grid">
-                <label className="field full"><span>{common.cardHolder}</span><input value={visaCard.holderName} onChange={(event) => updateVisaCardField('holderName', event.target.value)} /></label>
-                <label className="field full"><span>{common.cardNumber}</span><input inputMode="numeric" value={formatCardNumber(visaCard.number)} onChange={(event) => updateVisaCardField('number', event.target.value)} /></label>
-                <label><span>{common.expiryDate}</span><input inputMode="numeric" placeholder="MM/YY" value={visaCard.expiry} onChange={(event) => updateVisaCardField('expiry', event.target.value)} /></label>
-                <label><span>{common.securityCode}</span><input type="password" inputMode="numeric" maxLength={4} value={visaCard.securityCode} onChange={(event) => updateVisaCardField('securityCode', event.target.value)} /></label>
-                <label className="field full"><span>{common.billingAddress}</span><input value={visaCard.billingAddress} onChange={(event) => updateVisaCardField('billingAddress', event.target.value)} /></label>
-              </div>
-              <button className="submit-button profile-save-button" type="button" onClick={() => setModal(null)}>{common.saveCard}</button>
-            </div>
-          )}
           {modal === 'bank' && (
             <div className="modal-form zip-modal-form">
               <label><span>{driverText.bankName}</span><input value={bankAccount.bankName} onChange={(event) => updateBankField('bankName', event.target.value)} /></label>
@@ -966,9 +940,10 @@ export default function DriverInfoPage() {
           )}
           {modal === 'password' && (
             <div className="modal-form zip-modal-form">
-              <label><span>{driverText.modal.currentPassword}</span><input type="password" /></label>
-              <label><span>{driverText.modal.newPassword}</span><input type="password" /></label>
-              <button className="submit-button profile-save-button" type="button" onClick={() => setModal(null)}>{common.save}</button>
+              <label><span>{driverText.modal.currentPassword}</span><input type="password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, currentPassword: event.target.value }))} /></label>
+              <label><span>{driverText.modal.newPassword}</span><input type="password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))} /></label>
+              <label><span>Confirm new password</span><input type="password" value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))} /></label>
+              <button className="submit-button profile-save-button" type="button" onClick={savePassword}>{common.save}</button>
             </div>
           )}
           {modal === 'rating' && selectedHistory && (
@@ -1022,7 +997,7 @@ export default function DriverInfoPage() {
               </section>
             </div>
           )}
-          {modal && !['account', 'avatar', 'vehicle', 'visaCard', 'bank', 'password', 'rating'].includes(modal) && <p className="modal-copy">{status || driverText.modal.defaultCopy}</p>}
+          {modal && !['account', 'avatar', 'vehicle', 'bank', 'password', 'rating'].includes(modal) && <p className="modal-copy">{status || driverText.modal.defaultCopy}</p>}
         </Modal>
       </main>
     </PageShell>

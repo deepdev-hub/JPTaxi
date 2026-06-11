@@ -44,4 +44,10 @@ export class PaymentTransaction {
 
   @Column({ name: 'paid_at', type: 'timestamptz', nullable: true })
   paidAt: Date | null;
+
+  @Column({ name: 'idempotency_key', type: 'varchar', length: 100, unique: true })
+  idempotencyKey: string;
+
+  @Column({ name: 'payment_method_id', type: 'int', nullable: true })
+  paymentMethodId: number | null;
 }

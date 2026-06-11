@@ -3,62 +3,6 @@ import L from 'leaflet';
 import { MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
-const routePoints = [
-  {
-    key: 'pickup',
-    label: 'ホアンキエム湖',
-    meta: '出発地',
-    time: '18:30',
-    position: [21.02878, 105.85204],
-    type: 'pickup',
-  },
-  {
-    key: 'turn-1',
-    label: 'チャンティエン通り',
-    meta: '直進 1.1 km',
-    time: '+4分',
-    position: [21.02482, 105.85672],
-    type: 'waypoint',
-  },
-  {
-    key: 'turn-2',
-    label: 'キムマー通り',
-    meta: '右折して 2.7 km 進む',
-    time: '+8分',
-    position: [21.03162, 105.82084],
-    type: 'waypoint',
-  },
-  {
-    key: 'destination',
-    label: 'ロッテホテル ハノイ',
-    meta: '目的地',
-    time: '18:42',
-    position: [21.03205, 105.81283],
-    type: 'destination',
-  },
-];
-
-const routeLine = [
-  [21.02878, 105.85204],
-  [21.02812, 105.85046],
-  [21.02672, 105.84817],
-  [21.02482, 105.85672],
-  [21.02621, 105.84666],
-  [21.02942, 105.83628],
-  [21.03162, 105.82084],
-  [21.03205, 105.81283],
-];
-
-const alternateRoute = [
-  [21.02878, 105.85204],
-  [21.03282, 105.84628],
-  [21.03544, 105.83308],
-  [21.03448, 105.82091],
-  [21.03205, 105.81283],
-];
-
-const driverPosition = [21.03046, 105.82418];
-const currentPosition = [21.02878, 105.85204];
 const center = [21.0296, 105.8324];
 
 function createMarkerIcon(type, label, active = false) {
@@ -188,9 +132,9 @@ export default function InteractiveRouteMap({
   className = '',
   fitToRoute = true,
   interactive = true,
-  route = routePoints,
+  route = [],
   showCurrentLocation = false,
-  showDriver = true,
+  showDriver = false,
   showRoute = true,
   showControls = true,
   showDetails = true,
@@ -202,35 +146,37 @@ export default function InteractiveRouteMap({
   driverLocation = null,
   currentLocation = null,
   centerOnCurrentLocation = false,
-  routePath = routeLine,
-  alternateRoutePath = alternateRoute,
+  routePath = [],
+  alternateRoutePath = [],
   routeSummary = null,
   scrollWheelZoom = interactive,
   currentLocationLabel = 'Vị trí của bạn',
 }) {
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [routeHovered, setRouteHovered] = useState(false);
-  const [browserLocation, setBrowserLocation] = useState(currentPosition);
-  const driverLocationPosition = driverLocation ?? driverPosition;
+  const [browserLocation, setBrowserLocation] = useState(null);
+  const driverLocationPosition = driverLocation;
   const positions = useMemo(() => route.map((point) => point.position), [route]);
   const routeBoundsPositions = useMemo(
     () => {
       const basePositions = routePath?.length ? [...routePath, ...positions] : positions;
-      return showDriver ? [...basePositions, driverLocationPosition] : basePositions;
+      return showDriver && driverLocationPosition
+        ? [...basePositions, driverLocationPosition]
+        : basePositions;
     },
     [driverLocationPosition, positions, routePath, showDriver],
   );
   const currentLocationPosition = currentLocation ?? browserLocation;
-  const displayedBoundsPositions = showCurrentLocation
+  const displayedBoundsPositions = showCurrentLocation && currentLocationPosition
     ? [...routeBoundsPositions, currentLocationPosition]
     : routeBoundsPositions;
   const fitControlPositions = displayedBoundsPositions.length
     ? displayedBoundsPositions
-    : [
-        [currentLocationPosition[0] - 0.002, currentLocationPosition[1] - 0.002],
-        [currentLocationPosition[0] + 0.002, currentLocationPosition[1] + 0.002],
-      ];
-  const resolvedMapCenter = centerOnCurrentLocation ? currentLocationPosition : mapCenter;
+    : [mapCenter];
+  const resolvedMapCenter =
+    centerOnCurrentLocation && currentLocationPosition
+      ? currentLocationPosition
+      : mapCenter;
   const isRouteHighlighted = routeHovered || hoveredPoint !== null;
 
   useEffect(() => {
@@ -243,7 +189,7 @@ export default function InteractiveRouteMap({
         setBrowserLocation([position.coords.latitude, position.coords.longitude]);
       },
       () => {
-        setBrowserLocation(currentPosition);
+        setBrowserLocation(null);
       },
       { enableHighAccuracy: true, maximumAge: 30000, timeout: 7000 },
     );
@@ -252,9 +198,9 @@ export default function InteractiveRouteMap({
   return (
     <div className={`interactive-route-map leaflet-route-map ${isRouteHighlighted ? 'route-highlighted' : ''} ${className}`} aria-label="ルートマップ">
       <MapContainer
-        center={center}
+        center={resolvedMapCenter}
         className="leaflet-map-canvas"
-        zoom={14}
+        zoom={mapZoom}
         zoomControl={false}
         scrollWheelZoom={scrollWheelZoom}
         wheelPxPerZoomLevel={80}
@@ -268,7 +214,7 @@ export default function InteractiveRouteMap({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        {showRoute && (
+        {showRoute && routePath?.length ? (
           <>
             {alternateRoutePath?.length ? (
               <Polyline positions={alternateRoutePath} pathOptions={{ color: '#64748b', weight: 5, opacity: 0.52, dashArray: '8 9' }} />
@@ -285,7 +231,7 @@ export default function InteractiveRouteMap({
               pathOptions={{ color: isRouteHighlighted ? '#1d4ed8' : '#2563eb', weight: isRouteHighlighted ? 8 : 5, opacity: 0.95 }}
             />
           </>
-        )}
+        ) : null}
         {showMarkers && route.map((point, index) => (
           <Marker
             eventHandlers={{
@@ -309,7 +255,7 @@ export default function InteractiveRouteMap({
             </Tooltip>
           </Marker>
         ))}
-        {showDriver && (
+        {showDriver && driverLocationPosition && (
           <Marker
             eventHandlers={{
               mouseover: () => setHoveredPoint('driver'),
@@ -342,7 +288,7 @@ export default function InteractiveRouteMap({
             </Marker>
           );
         })}
-        {showCurrentLocation && (
+        {showCurrentLocation && currentLocationPosition && (
           <Marker icon={createCurrentLocationIcon()} position={currentLocationPosition} title={currentLocationLabel}>
             <Tooltip direction="top" offset={[0, -13]} opacity={1}>{currentLocationLabel}</Tooltip>
           </Marker>

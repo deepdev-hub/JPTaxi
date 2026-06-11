@@ -11,6 +11,13 @@ import {
   updateCustomerProfile,
   uploadAvatar,
 } from '../api/accounts.js';
+import { changePassword } from '../api/auth.js';
+import {
+  addPaymentMethod,
+  getNotificationPreferences,
+  getPaymentMethods,
+  updateNotificationPreferences,
+} from '../api/customers.js';
 import {
   getStoredProfileLanguage,
   languageOptions,
@@ -19,7 +26,7 @@ import {
   setStoredProfileLanguage,
 } from '../i18n/profileLanguage.js';
 import '../styles/app-pages.css';
-import { readSavedPlaces, writeSavedPlaces } from '../utils/savedPlaces.js';
+import { clearAuthSession } from '../utils/session.js';
 
 const userMenu = [
   { id: 'profile', icon: '👤', to: '/user-info/profile' },
@@ -31,9 +38,9 @@ const userMenu = [
 ];
 
 const defaultVisaCard = {
-  holderName: 'JP Taxi User',
-  number: '4111111111114821',
-  expiry: '12/29',
+  holderName: '',
+  number: '',
+  expiry: '',
   securityCode: '',
   billingAddress: '',
 };
@@ -52,26 +59,26 @@ function formatExpiry(value) {
 }
 
 function getCardLastFour(value) {
-  return normalizeCardNumber(value).slice(-4) || '4821';
+  return normalizeCardNumber(value).slice(-4) || '----';
 }
 
-const fallbackProfile = {
+const emptyProfile = {
   lastName: '',
   firstName: '',
-  email: localStorage.getItem('jpTaxiCustomerEmail') || localStorage.getItem('jpTaxiUserEmail') || '',
-  gender: 'Male',
-  phone: '+84123456789',
-  birthDate: '1990-01-01',
+  email: '',
+  gender: 'Other',
+  phone: '',
+  birthDate: '',
   avatarUrl: '',
-  createdAt: '2026-03-10',
+  createdAt: null,
   loginHistory: [],
 };
 
-function normalizeProfile(profile = fallbackProfile) {
+function normalizeProfile(profile = {}) {
   return {
-    ...fallbackProfile,
+    ...emptyProfile,
     ...profile,
-    birthDate: profile.birthDate ? String(profile.birthDate).slice(0, 10) : fallbackProfile.birthDate,
+    birthDate: profile.birthDate ? String(profile.birthDate).slice(0, 10) : emptyProfile.birthDate,
     avatarUrl: resolveAssetUrl(profile.avatarUrl),
     loginHistory: Array.isArray(profile.loginHistory) ? profile.loginHistory : [],
   };
@@ -89,12 +96,11 @@ function formatEmailDisplayName(value) {
 }
 
 function getDisplayName(profile, fallback = '') {
-  const storedEmail = localStorage.getItem('jpTaxiCustomerEmail') || localStorage.getItem('jpTaxiUserEmail') || '';
   const name = [profile.lastName, profile.firstName]
     .map((part) => String(part ?? '').trim())
     .filter(Boolean)
     .join(' ');
-  const emailName = formatEmailDisplayName(profile.email || storedEmail);
+  const emailName = formatEmailDisplayName(profile.email);
   return name
     || emailName
     || fallback
@@ -111,12 +117,22 @@ export default function UserInfoPage() {
   const { section } = useParams();
   const activeSection = userMenu.some((item) => item.id === section) ? section : 'profile';
   const [modal, setModal] = useState(null);
-  const [profile, setProfile] = useState(fallbackProfile);
-  const [savedPlaces, setSavedPlaces] = useState(readSavedPlaces);
+  const [profile, setProfile] = useState(emptyProfile);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [language, setLanguage] = useState(getStoredProfileLanguage);
   const [visaCard, setVisaCard] = useState(defaultVisaCard);
+  const [paymentMethods, setPaymentMethods] = useState([]);
+  const [notifications, setNotifications] = useState({
+    rideUpdates: true,
+    emailNotifications: true,
+    promotions: false,
+  });
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
   const [avatarFileName, setAvatarFileName] = useState('');
   const [avatarFile, setAvatarFile] = useState(null);
   const [croppedAvatarFile, setCroppedAvatarFile] = useState(null);
@@ -131,10 +147,18 @@ export default function UserInfoPage() {
     async function loadProfile() {
       setLoading(true);
       try {
-        const data = await getCustomerProfile();
-        if (!ignore) setProfile(normalizeProfile(data));
+        const [data, preferences, methods] = await Promise.all([
+          getCustomerProfile(),
+          getNotificationPreferences(),
+          getPaymentMethods(),
+        ]);
+        if (!ignore) {
+          setProfile(normalizeProfile(data));
+          setNotifications(preferences);
+          setPaymentMethods(Array.isArray(methods) ? methods : []);
+        }
       } catch (error) {
-        if (!ignore) setStatus(error.message || text.status.userDemo);
+        if (!ignore) setStatus(error.message || text.status.userLoadFailed);
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -143,7 +167,7 @@ export default function UserInfoPage() {
     return () => {
       ignore = true;
     };
-  }, [text.status.userDemo]);
+  }, [text.status.userLoadFailed]);
 
   useEffect(() => {
     function syncLanguage(event) {
@@ -176,16 +200,6 @@ export default function UserInfoPage() {
 
   function updateField(field, value) {
     setProfile((current) => ({ ...current, [field]: value }));
-  }
-
-  function updateSavedPlace(key, value) {
-    setSavedPlaces((current) => ({
-      ...current,
-      [key]: {
-        ...current[key],
-        address: value,
-      },
-    }));
   }
 
   function handleAvatarChange(event) {
@@ -241,7 +255,6 @@ export default function UserInfoPage() {
   }
 
   async function saveProfile() {
-    writeSavedPlaces(savedPlaces);
     try {
       const updated = await updateCustomerProfile({
         lastName: profile.lastName,
@@ -266,17 +279,66 @@ export default function UserInfoPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem('jpTaxiToken');
-    localStorage.removeItem('jpTaxiRole');
-    localStorage.removeItem('jpTaxiUserEmail');
-    localStorage.removeItem('jpTaxiCustomerId');
-    localStorage.removeItem('jpTaxiDriverId');
-    localStorage.removeItem('jpTaxiFallbackRide');
-    localStorage.removeItem('jpTaxiPaymentRequested');
+    clearAuthSession();
     sessionStorage.removeItem('jpTaxiRideRequestId');
     sessionStorage.removeItem('jpTaxiTripId');
     sessionStorage.removeItem('jpTaxiSelectedRoute');
     navigate('/login', { replace: true });
+  }
+
+  async function saveNotifications(next) {
+    setNotifications(next);
+    try {
+      const saved = await updateNotificationPreferences(next);
+      setNotifications(saved);
+      setStatus(text.status.dbSaved);
+    } catch (error) {
+      setStatus(error.message || 'Unable to save notification settings.');
+    }
+  }
+
+  async function savePaymentMethod() {
+    const [month, shortYear] = visaCard.expiry.split('/').map(Number);
+    const expiryYear = shortYear < 100 ? 2000 + shortYear : shortYear;
+    try {
+      const saved = await addPaymentMethod({
+        brand: 'VISA',
+        holderName: visaCard.holderName,
+        cardNumber: visaCard.number,
+        securityCode: visaCard.securityCode,
+        expiryMonth: month,
+        expiryYear,
+        billingAddress: visaCard.billingAddress,
+        isDefault: paymentMethods.length === 0,
+      });
+      setPaymentMethods((items) => [
+        ...items.map((item) => ({ ...item, isDefault: false })),
+        saved,
+      ]);
+      setVisaCard(defaultVisaCard);
+      setModal(null);
+      setStatus(text.status.dbSaved);
+    } catch (error) {
+      setStatus(error.message || 'Unable to add payment method.');
+    }
+  }
+
+  async function savePassword() {
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setStatus('New password confirmation does not match.');
+      return;
+    }
+    try {
+      await changePassword({
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+      });
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setModal(null);
+      setStatus(text.status.dbSaved);
+    } catch (error) {
+      setStatus(error.message || 'Unable to change password.');
+    }
   }
 
   function renderContent() {
@@ -306,13 +368,26 @@ export default function UserInfoPage() {
         <section className="panel zip-profile-panel">
           <h2 className="panel-title">{userText.menu.notifications}</h2>
           <div className="setting-list">
-            {userText.notifications.map(([icon, title, sub]) => (
-              <label className="setting-row" key={title}>
-                <span className="icon-box">{icon}</span>
-                <span><strong>{title}</strong><small>{sub}</small></span>
-                <span className="switch"><input type="checkbox" defaultChecked /><span></span></span>
-              </label>
-            ))}
+            {userText.notifications.map(([icon, title, sub], index) => {
+              const key = ['rideUpdates', 'emailNotifications', 'promotions'][index];
+              return (
+                <label className="setting-row" key={title}>
+                  <span className="icon-box">{icon}</span>
+                  <span><strong>{title}</strong><small>{sub}</small></span>
+                  <span className="switch">
+                    <input
+                      checked={Boolean(notifications[key])}
+                      onChange={(event) => saveNotifications({
+                        ...notifications,
+                        [key]: event.target.checked,
+                      })}
+                      type="checkbox"
+                    />
+                    <span />
+                  </span>
+                </label>
+              );
+            })}
           </div>
         </section>
       );
@@ -323,10 +398,12 @@ export default function UserInfoPage() {
         <section className="panel zip-profile-panel narrow-panel">
           <h2 className="panel-title">{userText.paymentTitle}</h2>
           <div className="setting-list">
-            <button className="account-card" type="button" onClick={() => setModal('card')}>
-              <strong>{userText.defaultPayment}</strong>
-              <span>{common.visaCard} **** {getCardLastFour(visaCard.number)}</span>
-            </button>
+            {paymentMethods.length ? paymentMethods.map((item) => (
+              <article className="account-card" key={item.paymentMethodId}>
+                <strong>{item.isDefault ? userText.defaultPayment : item.brand}</strong>
+                <span>{item.brand} **** {item.lastFour}</span>
+              </article>
+            )) : <p className="empty-state">No saved payment methods.</p>}
             <button className="submit-button profile-save-button" type="button" onClick={() => setModal('addCard')}>{common.addVisaCard}</button>
           </div>
         </section>
@@ -377,20 +454,33 @@ export default function UserInfoPage() {
                 </select>
               </label>
               <label><span>{common.phone}</span><input value={profile.phone} onChange={(event) => updateField('phone', event.target.value)} /></label>
-              <label className="field full"><span>{userText.address}</span><input defaultValue="Ba Dinh, Ha Noi" /></label>
+              <label className="field full"><span>{userText.address}</span><input value="" disabled placeholder="Manage addresses in saved places" /></label>
             </div>
           </section>
 
           <section className="panel zip-profile-panel stack">
             <h2 className="panel-title">{userText.menu.notifications}</h2>
             <div className="setting-list">
-              {userText.notifications.map(([icon, title, sub]) => (
-                <label className="setting-row" key={title}>
-                  <span className="icon-box">{icon}</span>
-                  <span><strong>{title}</strong><small>{sub}</small></span>
-                  <span className="switch"><input type="checkbox" defaultChecked /><span></span></span>
-                </label>
-              ))}
+              {userText.notifications.map(([icon, title, sub], index) => {
+                const key = ['rideUpdates', 'emailNotifications', 'promotions'][index];
+                return (
+                  <label className="setting-row" key={title}>
+                    <span className="icon-box">{icon}</span>
+                    <span><strong>{title}</strong><small>{sub}</small></span>
+                    <span className="switch">
+                      <input
+                        checked={Boolean(notifications[key])}
+                        onChange={(event) => saveNotifications({
+                          ...notifications,
+                          [key]: event.target.checked,
+                        })}
+                        type="checkbox"
+                      />
+                      <span />
+                    </span>
+                  </label>
+                );
+              })}
             </div>
           </section>
         </div>
@@ -405,11 +495,18 @@ export default function UserInfoPage() {
               </Link>
               <Link className="account-card profile-info-card" to="/user-info/payment">
                 <span className="account-icon">💳</span>
-                <span><strong>{userText.defaultPayment}</strong><small>{common.visaCard} **** {getCardLastFour(visaCard.number)}</small></span>
+                <span>
+                  <strong>{userText.defaultPayment}</strong>
+                  <small>
+                    {paymentMethods.find((item) => item.isDefault)
+                      ? `${paymentMethods.find((item) => item.isDefault).brand} **** ${paymentMethods.find((item) => item.isDefault).lastFour}`
+                      : common.unregistered}
+                  </small>
+                </span>
               </Link>
               <article className="account-card profile-info-card">
                 <span className="account-icon">🕘</span>
-                <span><strong>{userText.registeredDate}</strong><small>{formatDate(profile.createdAt, text.locale) || '2026/03/10'}</small></span>
+                <span><strong>{userText.registeredDate}</strong><small>{formatDate(profile.createdAt, text.locale) || common.unregistered}</small></span>
               </article>
             </div>
           </section>
@@ -520,15 +617,15 @@ export default function UserInfoPage() {
                 <label><span>{common.securityCode}</span><input type="password" inputMode="numeric" maxLength={4} value={visaCard.securityCode} onChange={(event) => updateVisaCardField('securityCode', event.target.value)} /></label>
                 <label className="field full"><span>{common.billingAddress}</span><input value={visaCard.billingAddress} onChange={(event) => updateVisaCardField('billingAddress', event.target.value)} /></label>
               </div>
-              <button className="submit-button profile-save-button" type="button" onClick={() => setModal(null)}>{common.saveCard}</button>
+              <button className="submit-button profile-save-button" type="button" onClick={savePaymentMethod}>{common.saveCard}</button>
             </div>
           )}
           {modal === 'password' && (
             <div className="modal-form zip-modal-form">
-              <label><span>{userText.modal.currentPassword}</span><input type="password" /></label>
-              <label><span>{userText.modal.newPassword}</span><input type="password" /></label>
-              <label><span>{userText.modal.confirmPassword}</span><input type="password" /></label>
-              <button className="submit-button profile-save-button" type="button" onClick={() => setModal(null)}>{common.save}</button>
+              <label><span>{userText.modal.currentPassword}</span><input type="password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((form) => ({ ...form, currentPassword: event.target.value }))} /></label>
+              <label><span>{userText.modal.newPassword}</span><input type="password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((form) => ({ ...form, newPassword: event.target.value }))} /></label>
+              <label><span>{userText.modal.confirmPassword}</span><input type="password" value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm((form) => ({ ...form, confirmPassword: event.target.value }))} /></label>
+              <button className="submit-button profile-save-button" type="button" onClick={savePassword}>{common.save}</button>
             </div>
           )}
           {modal === 'loginHistory' && (

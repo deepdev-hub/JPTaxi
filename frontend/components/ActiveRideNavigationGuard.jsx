@@ -2,19 +2,14 @@ import { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { getActiveDriverRide, getActiveRide } from '../api/rides.js';
 import { getActiveRideRedirect, syncActiveRideSession } from '../utils/activeRideNavigation.js';
+import { getAuthRole, getAuthToken } from '../utils/session.js';
 
 function getStoredRole() {
-  return localStorage.getItem('jpTaxiRole');
+  return getAuthRole();
 }
 
-function getStoredToken(role) {
-  if (role === 'driver') {
-    return localStorage.getItem('jpTaxiDriverToken') || localStorage.getItem('jpTaxiToken');
-  }
-  if (role === 'customer' || role === 'user') {
-    return localStorage.getItem('jpTaxiCustomerToken') || localStorage.getItem('jpTaxiToken');
-  }
-  return null;
+function getStoredToken() {
+  return getAuthToken();
 }
 
 function loadActiveRide(role) {
@@ -26,7 +21,7 @@ export default function ActiveRideNavigationGuard({ children }) {
   const [state, setState] = useState({ checking: true, role: null, activeRide: null });
   const storedRole = getStoredRole();
   const role = storedRole === 'user' ? 'customer' : storedRole;
-  const token = getStoredToken(role);
+  const token = getStoredToken();
 
   useEffect(() => {
     let ignored = false;
@@ -36,7 +31,6 @@ export default function ActiveRideNavigationGuard({ children }) {
       return undefined;
     }
 
-    sessionStorage.setItem('jpTaxiActiveRole', role);
     setState((current) => ({ ...current, checking: true, role }));
 
     loadActiveRide(role)

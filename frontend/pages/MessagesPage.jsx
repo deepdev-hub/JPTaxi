@@ -12,11 +12,12 @@ import PageShell from '../components/PageShell.jsx';
 import Topbar from '../components/Topbar.jsx';
 import { useChatSocket } from '../hooks/useChatSocket.js';
 import '../styles/app-pages.css';
+import { getAuthRole } from '../utils/session.js';
 
 const QUICK_REPLIES = ['今どこですか？', '着きました！', '少し遅れます', '了解です'];
 
 function getCurrentRole() {
-  return sessionStorage.getItem('jpTaxiActiveRole') || localStorage.getItem('jpTaxiRole');
+  return getAuthRole();
 }
 
 function firstChar(name) {

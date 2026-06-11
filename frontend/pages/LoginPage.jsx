@@ -4,8 +4,13 @@ import Modal from '../components/Modal.jsx';
 import PageShell from '../components/PageShell.jsx';
 import PasswordField from '../components/PasswordField.jsx';
 import Topbar from '../components/Topbar.jsx';
-import { apiRequest } from '../api/client.js';
+import {
+  forgotPassword,
+  loginAccount,
+  resetPassword,
+} from '../api/auth.js';
 import { emailPattern } from '../utils/loginValidation.js';
+import { clearAuthSession, persistAuthSession } from '../utils/session.js';
 import '../styles/auth.css';
 
 const loginMessages = {
@@ -120,33 +125,24 @@ export default function LoginPage() {
     const trimmedEmail = email.trim();
 
     try {
-      const result = await apiRequest('/login', {
-        method: 'POST',
-        body: JSON.stringify({ email: trimmedEmail, password, role: loginRole }),
+      const result = await loginAccount({
+        email: trimmedEmail,
+        password,
+        role: loginRole,
       });
       const role = result?.role === 'driver' ? 'driver' : 'customer';
 
-      localStorage.setItem('jpTaxiToken', result.token);
-      localStorage.setItem('jpTaxiRole', role);
-      localStorage.setItem('jpTaxiUserEmail', trimmedEmail);
-      localStorage.setItem(role === 'driver' ? 'jpTaxiDriverToken' : 'jpTaxiCustomerToken', result.token);
-      localStorage.setItem(role === 'driver' ? 'jpTaxiDriverEmail' : 'jpTaxiCustomerEmail', trimmedEmail);
-      sessionStorage.setItem('jpTaxiActiveRole', role);
-
-      if (result?.user?.customerId) {
-        localStorage.setItem('jpTaxiCustomerId', String(result.user.customerId));
-      }
-      if (result?.user?.driverId) {
-        localStorage.setItem('jpTaxiDriverId', String(result.user.driverId));
-      }
+      persistAuthSession({
+        token: result.token,
+        role,
+        user: result.user,
+        email: trimmedEmail,
+      });
 
       setStatus(loginMessages.success);
       navigate(role === 'driver' ? '/driver-home' : '/home');
     } catch (error) {
-      localStorage.removeItem('jpTaxiToken');
-      localStorage.removeItem('jpTaxiRole');
-      localStorage.removeItem('jpTaxiUserEmail');
-      sessionStorage.removeItem('jpTaxiActiveRole');
+      clearAuthSession();
       setStatus(error.message || 'ログインできませんでした。');
     }
   }
@@ -162,7 +158,7 @@ export default function LoginPage() {
     setForgotOpen(true);
   }
 
-  function handleForgotSubmit(event) {
+  async function handleForgotSubmit(event) {
     event.preventDefault();
     setForgotError('');
     setForgotStatus('');
@@ -188,8 +184,17 @@ export default function LoginPage() {
         return;
       }
 
-      setForgotStatus('新しいパスワードを設定しました。');
-      window.setTimeout(() => setForgotOpen(false), 1000);
+      try {
+        await resetPassword({
+          email: forgotEmail.trim(),
+          code: forgotCode.trim(),
+          newPassword,
+        });
+        setForgotStatus('新しいパスワードを設定しました。');
+        window.setTimeout(() => setForgotOpen(false), 1000);
+      } catch (error) {
+        setForgotError(error.message || 'パスワードを更新できませんでした。');
+      }
       return;
     }
 
@@ -205,8 +210,13 @@ export default function LoginPage() {
       return;
     }
 
-    setForgotStep('code');
-    setForgotStatus('確認コードを送信しました。');
+    try {
+      await forgotPassword(trimmedEmail);
+      setForgotStep('code');
+      setForgotStatus('確認コードを送信しました。');
+    } catch (error) {
+      setForgotError(error.message || '確認コードを送信できませんでした。');
+    }
   }
 
   return (

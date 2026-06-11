@@ -2,13 +2,14 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { getStoredProfileLanguage, LANGUAGE_EVENT, profileText } from '../i18n/profileLanguage.js';
 import '../styles/footer.css';
+import { getAuthRole } from '../utils/session.js';
 
 export default function Footer() {
   const location = useLocation();
   const [language, setLanguage] = useState(getStoredProfileLanguage);
   const common = (profileText[language] || profileText.ja).common;
   const isDriver =
-    localStorage.getItem('jpTaxiRole') === 'driver' ||
+    getAuthRole() === 'driver' ||
     location.pathname.startsWith('/driver') ||
     location.pathname === '/messages/customer' ||
     location.pathname === '/xacnhancuocxe';

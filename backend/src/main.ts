@@ -3,7 +3,9 @@ import { join } from 'path';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
+import { configuredCorsOrigins } from './config/cors';
 
 function ensureUploadDirs() {
   ['avatars', 'drivers/portraits', 'drivers/licenses', 'drivers/vehicles'].forEach((subdir) => {
@@ -17,6 +19,7 @@ function ensureUploadDirs() {
 async function bootstrap() {
   ensureUploadDirs();
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const config = app.get(ConfigService);
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
@@ -26,11 +29,8 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
-  const frontendOrigins = process.env.FRONTEND_URL
-    ? process.env.FRONTEND_URL.split(',').map((origin) => origin.trim()).filter(Boolean)
-    : true;
-  app.enableCors({ origin: frontendOrigins, credentials: true });
-  const port = parseInt(process.env.PORT ?? '3000', 10);
+  app.enableCors({ origin: configuredCorsOrigins(), credentials: true });
+  const port = config.getOrThrow<number>('PORT');
   await app.listen(port, '0.0.0.0');
 }
 
