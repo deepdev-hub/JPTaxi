@@ -23,7 +23,7 @@ export class UploadStorageService {
       );
     }
     const filename = `${randomUUID()}${extension}`;
-    if (this.config.get<string>('UPLOAD_MODE', 'local') === 'supabase_s3') {
+    if (this.getUploadMode() === 'supabase_s3') {
       const key = `${subdir}/${filename}`;
       const client = this.createS3Client();
       await client.send(new PutObjectCommand({
@@ -58,5 +58,23 @@ export class UploadStorageService {
         ),
       },
     });
+  }
+
+  private getUploadMode(): 'local' | 'supabase_s3' {
+    const explicitMode = this.config.get<string>('UPLOAD_MODE');
+    if (explicitMode === 'supabase_s3' || explicitMode === 'local') {
+      return explicitMode;
+    }
+
+    const hasSupabaseConfig = [
+      'SUPABASE_STORAGE_ENDPOINT',
+      'SUPABASE_STORAGE_REGION',
+      'SUPABASE_STORAGE_ACCESS_KEY',
+      'SUPABASE_STORAGE_SECRET_KEY',
+      'SUPABASE_STORAGE_BUCKET',
+      'SUPABASE_STORAGE_PUBLIC_URL',
+    ].every((name) => Boolean(this.config.get<string>(name)));
+
+    return hasSupabaseConfig ? 'supabase_s3' : 'local';
   }
 }

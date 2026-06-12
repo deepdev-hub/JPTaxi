@@ -65,4 +65,30 @@ describe('UploadStorageService', () => {
       ContentType: 'image/jpeg',
     });
   });
+
+  it('uses Supabase automatically when Spring-compatible storage variables are present', async () => {
+    const service = new UploadStorageService(new ConfigService({
+      SUPABASE_STORAGE_ENDPOINT: 'https://storage.example.com/s3',
+      SUPABASE_STORAGE_REGION: 'local',
+      SUPABASE_STORAGE_ACCESS_KEY: 'access',
+      SUPABASE_STORAGE_SECRET_KEY: 'secret',
+      SUPABASE_STORAGE_BUCKET: 'jptaxi',
+      SUPABASE_STORAGE_PUBLIC_URL: 'https://cdn.example.com/jptaxi',
+    }));
+    const send = jest.fn().mockResolvedValue({});
+    jest.spyOn(service as never, 'createS3Client' as never)
+      .mockReturnValue({ send } as never);
+    const file = {
+      originalname: 'insurance.webp',
+      mimetype: 'image/webp',
+      buffer: Buffer.from('image-bytes'),
+    } as Express.Multer.File;
+
+    const url = await service.storeImage(file, 'drivers/insurance');
+
+    expect(url).toMatch(
+      /^https:\/\/cdn\.example\.com\/jptaxi\/drivers\/insurance\/[a-f0-9-]+\.webp$/,
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+  });
 });

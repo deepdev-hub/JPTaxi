@@ -120,7 +120,7 @@ export default function RegisterPage() {
         navigate(role === 'driver' ? '/driver-home' : '/home', { replace: true });
       }, 1000);
     } catch (error) {
-      setStatus(translateApiError(error, t, t('register.failed')));
+      setStatus(translateApiError(error, t));
       setStatusType('error');
     } finally {
       setIsSubmitting(false);

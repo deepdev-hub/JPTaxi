@@ -50,6 +50,30 @@ describeWithDatabase('seeded authentication (e2e)', () => {
       });
   });
 
+  it('creates a fresh random 6-digit reset code for each forgot-password request', async () => {
+    const first = await request(app.getHttpServer())
+      .post('/api/auth/forgot-password')
+      .send({ email: 'customer@jptaxi.local' })
+      .expect(201);
+
+    const second = await request(app.getHttpServer())
+      .post('/api/auth/forgot-password')
+      .send({ email: 'customer@jptaxi.local' })
+      .expect(201);
+
+    expect(first.body.message).toBe('If the account exists, a reset code has been sent.');
+    expect(second.body.message).toBe('If the account exists, a reset code has been sent.');
+
+    const { mailOutbox } = await import('./test-app');
+    const lastTwo = mailOutbox.passwordResets.slice(-2);
+    expect(lastTwo).toHaveLength(2);
+    expect(lastTwo[0].to).toBe('customer@jptaxi.local');
+    expect(lastTwo[1].to).toBe('customer@jptaxi.local');
+    expect(lastTwo[0].code).toMatch(/^\d{6}$/);
+    expect(lastTwo[1].code).toMatch(/^\d{6}$/);
+    expect(lastTwo[0].code).not.toBe(lastTwo[1].code);
+  });
+
   it('records the customer device and exposes owned login history', async () => {
     const login = await request(app.getHttpServer())
       .post('/api/auth/login')
