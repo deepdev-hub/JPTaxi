@@ -43,6 +43,10 @@ export function getPaymentMethods() {
   return apiRequest('/customers/me/payment-methods');
 }
 
+export function getLoginHistory() {
+  return apiRequest('/customers/me/login-history');
+}
+
 export function addPaymentMethod(payload) {
   return apiRequest('/customers/me/payment-methods', {
     method: 'POST',

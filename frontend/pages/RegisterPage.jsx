@@ -5,10 +5,13 @@ import PageShell from '../components/PageShell.jsx';
 import PasswordField from '../components/PasswordField.jsx';
 import Topbar from '../components/Topbar.jsx';
 import { persistAuthSession } from '../utils/session.js';
+import { useI18n } from '../i18n/I18nProvider.jsx';
+import { translateApiError } from '../i18n/errors.js';
 import '../styles/auth.css';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [searchParams] = useSearchParams();
   const isDriverRegistration = searchParams.get('role') === 'driver';
   const pendingDriver = useMemo(() => {
@@ -30,6 +33,7 @@ export default function RegisterPage() {
     agreed: false,
   });
   const [status, setStatus] = useState('');
+  const [statusType, setStatusType] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -50,17 +54,21 @@ export default function RegisterPage() {
     event.preventDefault();
     if (isSubmitting) return;
     setStatus('');
+    setStatusType('');
 
     if (form.password !== form.confirmPassword) {
-      setStatus('パスワード確認が一致しません。');
+      setStatus(t('auth.passwordMismatch'));
+      setStatusType('error');
       return;
     }
     if (!form.agreed) {
-      setStatus('利用規約に同意してください。');
+      setStatus(t('register.termsRequired'));
+      setStatusType('error');
       return;
     }
     if (isDriverRegistration && !pendingDriver) {
-      setStatus('先にドライバー登録情報を入力してください。');
+      setStatus(t('register.driverCopy'));
+      setStatusType('error');
       navigate('/driver-register');
       return;
     }
@@ -106,9 +114,14 @@ export default function RegisterPage() {
         email: form.email.trim(),
       });
       sessionStorage.removeItem('jpTaxiPendingDriverRegistration');
-      navigate(role === 'driver' ? '/driver-home' : '/home', { replace: true });
+      setStatus(t('register.success'));
+      setStatusType('success');
+      window.setTimeout(() => {
+        navigate(role === 'driver' ? '/driver-home' : '/home', { replace: true });
+      }, 1000);
     } catch (error) {
-      setStatus(error.message || '登録できませんでした。');
+      setStatus(translateApiError(error, t, t('register.failed')));
+      setStatusType('error');
     } finally {
       setIsSubmitting(false);
     }
@@ -121,22 +134,22 @@ export default function RegisterPage() {
 
       <section className="auth-layout">
         <div className="intro">
-          <span className="eyebrow">{isDriverRegistration ? '🚖 ドライバーアカウント作成' : '✨ 新規アカウント作成'}</span>
-          <h1>{isDriverRegistration ? 'ドライバーアカウントを作成しましょう' : 'JP TAXIをはじめましょう'}</h1>
-          <p>{isDriverRegistration ? '先に入力したドライバー情報と紐づけて、運転者用アカウントを作成します。' : '新しいアカウントを作成すると、日本語対応のタクシー予約、履歴確認、メッセージ機能などをご利用いただけます。'}</p>
+          <span className="eyebrow">{isDriverRegistration ? `🚖 ${t('register.driverEyebrow')}` : `✨ ${t('register.customerEyebrow')}`}</span>
+          <h1>{isDriverRegistration ? t('register.driverTitle') : t('register.title')}</h1>
+          <p>{isDriverRegistration ? t('register.driverCopy') : t('register.customerCopy')}</p>
 
-          <div className="benefits" aria-label="サービスの特徴">
+          <div className="benefits" aria-label={t('auth.features')}>
             <article>
-              <h2>簡単登録</h2>
-              <p>必要情報を入力するだけで、すぐにアカウントを作成できます。</p>
+              <h2>{t('register.easy')}</h2>
+              <p>{t('register.easyCopy')}</p>
             </article>
             <article>
-              <h2>予約管理</h2>
-              <p>配車予約から履歴の確認まで、一つのアカウントでまとめて管理できます。</p>
+              <h2>{t('register.management')}</h2>
+              <p>{t('register.managementCopy')}</p>
             </article>
             <article>
-              <h2>安心の利用</h2>
-              <p>日本語対応の画面とサポートで、初めてでも安心して利用できます。</p>
+              <h2>{t('register.safe')}</h2>
+              <p>{t('register.safeCopy')}</p>
             </article>
           </div>
         </div>
@@ -144,63 +157,71 @@ export default function RegisterPage() {
         <section className="auth-card" aria-labelledby="register-title">
           <div className="form-logo" aria-hidden="true">🚕</div>
           <div className="form-heading">
-            <h2 id="register-title">{isDriverRegistration ? 'ドライバーアカウント登録' : '顧客登録'}</h2>
-            <p>{isDriverRegistration ? 'ログイン用のメールアドレスとパスワードを設定してください。' : '必要情報を入力して、新しいアカウントを作成してください。'}</p>
+            <h2 id="register-title">{isDriverRegistration ? t('register.driverFormTitle') : t('register.customerFormTitle')}</h2>
+            <p>{isDriverRegistration ? t('register.driverFormCopy') : t('register.customerFormCopy')}</p>
           </div>
 
           <form className="auth-form" onSubmit={submitRegistration}>
             <div className="field-grid two">
               <label>
-                <span>姓</span>
-                <input type="text" placeholder="姓を入力" required value={form.lastName} onChange={(event) => updateField('lastName', event.target.value)} />
+                <span>{t('register.lastName')}</span>
+                <input type="text" placeholder={t('register.lastName')} required value={form.lastName} onChange={(event) => updateField('lastName', event.target.value)} />
               </label>
               <label>
-                <span>名</span>
-                <input type="text" placeholder="名を入力" required value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} />
+                <span>{t('register.firstName')}</span>
+                <input type="text" placeholder={t('register.firstName')} required value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} />
               </label>
             </div>
 
             <label>
-              <span>メールアドレス</span>
+              <span>{t('common.email')}</span>
               <input type="email" placeholder="example@email.com" required value={form.email} onChange={(event) => updateField('email', event.target.value)} />
             </label>
 
             <div className="field-grid two">
               <label>
-                <span>電話番号</span>
-                <input type="tel" placeholder="電話番号を入力" required value={form.phone} onChange={(event) => updateField('phone', event.target.value)} />
+                <span>{t('register.phone')}</span>
+                <input type="tel" placeholder={t('register.phone')} required value={form.phone} onChange={(event) => updateField('phone', event.target.value)} />
               </label>
               <label>
-                <span>性別</span>
+                <span>{t('register.gender')}</span>
                 <select value={form.gender} onChange={(event) => updateField('gender', event.target.value)}>
-                  <option value="Male">男性</option>
-                  <option value="Female">女性</option>
-                  <option value="Other">その他</option>
+                  <option value="Male">{t('register.male')}</option>
+                  <option value="Female">{t('register.female')}</option>
+                  <option value="Other">{t('register.other')}</option>
                 </select>
               </label>
             </div>
             <label>
-              <span>生年月日</span>
+              <span>{t('register.birthDate')}</span>
               <input type="date" value={form.birthDate} onChange={(event) => updateField('birthDate', event.target.value)} />
             </label>
 
-            <PasswordField label="パスワード" placeholder="パスワードを入力" value={form.password} onChange={(event) => updateField('password', event.target.value)} />
-            <PasswordField label="パスワード確認" placeholder="もう一度入力" value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} />
+            <PasswordField label={t('common.password')} placeholder={t('common.password')} value={form.password} onChange={(event) => updateField('password', event.target.value)} />
+            <PasswordField label={t('register.confirmPassword')} placeholder={t('register.confirmPassword')} value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} />
 
             <label className="terms">
               <input type="checkbox" checked={form.agreed} onChange={(event) => updateField('agreed', event.target.checked)} />
-              <span>利用規約およびプライバシーポリシーに同意します</span>
+              <span>{t('register.terms')}</span>
             </label>
             {isDriverRegistration && pendingDriver && (
               <div className="notice-box">
-                ドライバー申請情報: <strong>{pendingDriver.vehicleBrand || '車両未入力'} / {pendingDriver.licensePlate}</strong>
+                {t('auth.driverRegister')}: <strong>{pendingDriver.vehicleBrand || t('common.unavailable')} / {pendingDriver.licensePlate}</strong>
               </div>
             )}
-            {status && <p className="form-status show">{status}</p>}
+            {status && (
+              <p
+                className={`form-status show ${statusType}`}
+                role={statusType === 'error' ? 'alert' : 'status'}
+                aria-live={statusType === 'error' ? 'assertive' : 'polite'}
+              >
+                {status}
+              </p>
+            )}
 
-            <button className="submit-button" type="submit" disabled={isSubmitting}>{isSubmitting ? '登録中...' : '登録'}</button>
-            <p className="note-link">すでにアカウントをお持ちですか？ <Link to="/login">ログイン</Link></p>
-            {!isDriverRegistration && <p className="note-link">ドライバーですか？ <Link to="/driver-register">運転者登録へ</Link></p>}
+            <button className="submit-button" type="submit" disabled={isSubmitting}>{isSubmitting ? t('register.submitting') : t('register.submit')}</button>
+            <p className="note-link">{t('register.haveAccount')} <Link to="/login">{t('auth.login')}</Link></p>
+            {!isDriverRegistration && <p className="note-link">{t('auth.workAsDriver')} <Link to="/driver-register">{t('auth.driverRegister')}</Link></p>}
           </form>
         </section>
       </section>

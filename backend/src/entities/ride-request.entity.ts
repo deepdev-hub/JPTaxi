@@ -70,4 +70,27 @@ export class RideRequest {
 
   @Column({ name: 'raw_fare_vnd', type: 'int', nullable: true })
   rawFareVnd: number | null;
+
+  @Column({ name: 'estimated_distance_meters', type: 'int', nullable: true })
+  estimatedDistanceMeters: number | null;
+
+  @Column({ name: 'estimated_duration_seconds', type: 'int', nullable: true })
+  estimatedDurationSeconds: number | null;
+
+  @Column({
+    name: 'search_group_id',
+    type: 'uuid',
+    default: () => 'gen_random_uuid()',
+  })
+  searchGroupId: string;
+
+  @Column({
+    name: 'search_started_at',
+    type: 'timestamptz',
+    default: () => 'CURRENT_TIMESTAMP',
+  })
+  searchStartedAt: Date;
+
+  @Column({ name: 'search_radius_km', type: 'int', default: 2 })
+  searchRadiusKm: number;
 }

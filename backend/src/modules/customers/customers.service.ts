@@ -33,7 +33,7 @@ export class CustomersService {
     private readonly searchHistory: Repository<SearchHistory>,
   ) {}
 
-  private async loginHistoryFor(customerId: number) {
+  async getLoginHistory(customerId: number) {
     const rows = await this.logins.find({
       where: { userType: LoginUserType.customer, userId: customerId },
       order: { loginTime: 'DESC' },
@@ -41,6 +41,7 @@ export class CustomersService {
     });
     return rows.map((r) => ({
       ipAddress: r.ipAddress,
+      userAgent: r.userAgent,
       loginTime: r.loginTime,
     }));
   }
@@ -48,7 +49,7 @@ export class CustomersService {
   async getProfile(customerId: number) {
     const c = await this.customers.findOne({ where: { customerId } });
     if (!c) throw new NotFoundException();
-    const loginHistory = await this.loginHistoryFor(customerId);
+    const loginHistory = await this.getLoginHistory(customerId);
     return {
       lastName: c.lastName,
       firstName: c.firstName,

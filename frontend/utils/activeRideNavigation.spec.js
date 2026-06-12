@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  getActiveRideRedirect,
   getRideContinuationPath,
   hasOutstandingPayment,
   syncActiveRideSession,
@@ -33,5 +34,17 @@ describe('active ride navigation', () => {
     expect(getRideContinuationPath('customer', activeRide)).toBe('/payment');
     syncActiveRideSession(activeRide);
     expect(sessionStorage.getItem('jpTaxiTripId')).toBe('42');
+  });
+
+  it('allows the customer to view the assigned-driver confirmation', () => {
+    const activeRide = {
+      type: 'trip',
+      paymentRequested: false,
+      data: { tripId: 42 },
+    };
+
+    expect(
+      getActiveRideRedirect('customer', activeRide, '/ride-confirm'),
+    ).toBeNull();
   });
 });

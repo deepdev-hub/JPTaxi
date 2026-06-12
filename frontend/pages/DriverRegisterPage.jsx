@@ -1,11 +1,14 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import PageShell from '../components/PageShell.jsx';
+import { useI18n } from '../i18n/I18nProvider.jsx';
+import { translateApiError } from '../i18n/errors.js';
 import '../styles/auth.css';
 import '../styles/app-pages.css';
 
 export default function DriverRegisterPage() {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [form, setForm] = useState({
     lastName: '',
     firstName: '',
@@ -29,7 +32,7 @@ export default function DriverRegisterPage() {
   async function submitDriverApplication(event) {
     event.preventDefault();
     if (!form.lastName.trim() || !form.firstName.trim() || !form.phone.trim() || !form.licenseNumber.trim() || !form.vehicleBrand.trim() || !form.licensePlate.trim()) {
-      setStatus('必要な情報を入力してください。');
+      setStatus(t('driverRegister.required'));
       return;
     }
 
@@ -38,7 +41,7 @@ export default function DriverRegisterPage() {
       sessionStorage.setItem('jpTaxiPendingDriverRegistration', JSON.stringify(form));
       navigate('/register?role=driver');
     } catch (error) {
-      setStatus(error.message || '申請情報を保存できませんでした。');
+      setStatus(translateApiError(error, t, t('driverRegister.saveFailed')));
     } finally {
       setSubmitting(false);
     }
@@ -49,41 +52,41 @@ export default function DriverRegisterPage() {
       <main className="driver-register-screen">
         <section className="driver-register-layout">
           <div className="driver-register-intro">
-            <span className="eyebrow">🚖 ドライバー登録・免許更新</span>
-            <h1>ドライバーとして登録し、JP TAXIで働きましょう</h1>
-            <p>運転免許証や車両情報を登録すると、配車リクエストの受信やプロフィール管理ができるようになります。</p>
+            <span className="eyebrow">🚖 {t('driverRegister.eyebrow')}</span>
+            <h1>{t('driverRegister.title')}</h1>
+            <p>{t('driverRegister.copy')}</p>
 
             <div className="driver-register-benefits">
-              <article><strong>オンライン申請</strong><span>必要情報を入力してアカウントを作成し、ログイン後に本人確認書類を提出できます。</span></article>
-              <article><strong>免許更新対応</strong><span>有効期限の近い運転免許証を更新し、継続稼働に備えます。</span></article>
-              <article><strong>審査後すぐ開始</strong><span>審査完了後、配車リクエストを受け取って運転を始められます。</span></article>
+              <article><strong>{t('driverRegister.online')}</strong><span>{t('driverRegister.onlineCopy')}</span></article>
+              <article><strong>{t('driverRegister.renewal')}</strong><span>{t('driverRegister.renewalCopy')}</span></article>
+              <article><strong>{t('driverRegister.review')}</strong><span>{t('driverRegister.reviewCopy')}</span></article>
             </div>
 
             <div className="driver-register-steps">
-              <article><span>1</span><div><strong>基本情報の入力</strong><small>氏名・電話番号・使用言語などのプロフィール情報を入力します。</small></div></article>
-              <article><span>2</span><div><strong>免許証・本人確認書類の提出</strong><small>運転免許証や本人確認書類をアップロードして審査を受けます。</small></div></article>
-              <article><span>3</span><div><strong>車両情報の登録</strong><small>車種・ナンバープレート・座席数などを入力して登録を完了します。</small></div></article>
+              <article><span>1</span><div><strong>{t('driverRegister.basic')}</strong><small>{t('driverRegister.onlineCopy')}</small></div></article>
+              <article><span>2</span><div><strong>{t('driverRegister.license')}</strong><small>{t('driverRegister.documentsCopy')}</small></div></article>
+              <article><span>3</span><div><strong>{t('driverRegister.vehicle')}</strong><small>{t('driverRegister.copy')}</small></div></article>
             </div>
           </div>
 
           <section className="driver-register-form-card">
-            <Link className="driver-register-login-link" to="/login">← ログインへ戻る</Link>
+            <Link className="driver-register-login-link" to="/login">← {t('auth.login')}</Link>
             <div className="form-logo" aria-hidden="true">🚕</div>
             <div className="form-heading">
-              <h2>運転者登録</h2>
-              <p>ドライバー登録、または運転免許・車両情報の更新を行ってください。</p>
+              <h2>{t('auth.driverRegister')}</h2>
+              <p>{t('driverRegister.copy')}</p>
             </div>
 
             <form className="auth-form driver-register-form" onSubmit={submitDriverApplication}>
-              <div className="notice-box">現在の申請状況：<strong>未提出</strong><br />書類の審査には通常1〜2営業日かかります。</div>
+              <div className="notice-box">{t('driverRegister.status')}<br />{t('driverRegister.reviewTime')}</div>
 
-              <h3 className="section-title">基本情報</h3>
+              <h3 className="section-title">{t('driverRegister.basic')}</h3>
               <div className="field-grid two">
-                <label><span>姓</span><input placeholder="山田" value={form.lastName} onChange={(event) => updateField('lastName', event.target.value)} /></label>
-                <label><span>名</span><input placeholder="太郎" value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} /></label>
-                <label><span>電話番号</span><input placeholder="+84 000 000 000" value={form.phone} onChange={(event) => updateField('phone', event.target.value)} /></label>
+                <label><span>{t('register.lastName')}</span><input placeholder={t('register.lastName')} value={form.lastName} onChange={(event) => updateField('lastName', event.target.value)} /></label>
+                <label><span>{t('register.firstName')}</span><input placeholder={t('register.firstName')} value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} /></label>
+                <label><span>{t('register.phone')}</span><input placeholder="+84 000 000 000" value={form.phone} onChange={(event) => updateField('phone', event.target.value)} /></label>
                 <label>
-                  <span>日本語レベル</span>
+                  <span>{t('driverRegister.language')}</span>
                   <select value={form.language} onChange={(event) => updateField('language', event.target.value)}>
                     <option value="N5">N5</option>
                     <option value="N4">N4</option>
@@ -95,11 +98,11 @@ export default function DriverRegisterPage() {
                 </label>
               </div>
 
-              <h3 className="section-title">運転免許情報</h3>
+              <h3 className="section-title">{t('driverRegister.license')}</h3>
               <div className="field-grid two">
-                <label><span>免許証番号</span><input placeholder="DL-123456789" value={form.licenseNumber} onChange={(event) => updateField('licenseNumber', event.target.value)} /></label>
+                <label><span>{t('driverRegister.licenseNumber')}</span><input placeholder="DL-123456789" value={form.licenseNumber} onChange={(event) => updateField('licenseNumber', event.target.value)} /></label>
                 <label>
-                  <span>免許種別</span>
+                  <span>{t('driverRegister.licenseType')}</span>
                   <select value={form.licenseType} onChange={(event) => updateField('licenseType', event.target.value)}>
                     <option value="B">B</option>
                     <option value="C1">C1</option>
@@ -109,35 +112,35 @@ export default function DriverRegisterPage() {
                     <option value="D">D</option>
                   </select>
                 </label>
-                <label><span>有効期限</span><input type="date" value={form.licenseExpiryDate} onChange={(event) => updateField('licenseExpiryDate', event.target.value)} /></label>
+                <label><span>{t('driverRegister.expiry')}</span><input type="date" value={form.licenseExpiryDate} onChange={(event) => updateField('licenseExpiryDate', event.target.value)} /></label>
               </div>
-              <h3 className="section-title">車両情報</h3>
+              <h3 className="section-title">{t('driverRegister.vehicle')}</h3>
               <div className="field-grid two">
-                <label><span>車種</span><input placeholder="メーカー・モデル" value={form.vehicleBrand} onChange={(event) => updateField('vehicleBrand', event.target.value)} /></label>
-                <label><span>ナンバープレート</span><input placeholder="License plate" value={form.licensePlate} onChange={(event) => updateField('licensePlate', event.target.value)} /></label>
+                <label><span>{t('driverRegister.vehicleModel')}</span><input placeholder={t('driverRegister.vehicleModel')} value={form.vehicleBrand} onChange={(event) => updateField('vehicleBrand', event.target.value)} /></label>
+                <label><span>{t('driverRegister.plate')}</span><input placeholder={t('driverRegister.plate')} value={form.licensePlate} onChange={(event) => updateField('licensePlate', event.target.value)} /></label>
                 <label>
-                  <span>座席数</span>
+                  <span>{t('driverRegister.seats')}</span>
                   <select value={form.vehicleType} onChange={(event) => updateField('vehicleType', event.target.value)}>
-                    <option value="4">4人乗り</option>
-                    <option value="7">7人乗り</option>
-                    <option value="9">9人乗り</option>
+                    <option value="4">4</option>
+                    <option value="7">7</option>
+                    <option value="9">9</option>
                   </select>
                 </label>
-                <label><span>車両カラー</span><input placeholder="白" value={form.vehicleColor} onChange={(event) => updateField('vehicleColor', event.target.value)} /></label>
+                <label><span>{t('driverRegister.color')}</span><input placeholder={t('driverRegister.color')} value={form.vehicleColor} onChange={(event) => updateField('vehicleColor', event.target.value)} /></label>
               </div>
               <div className="notice-box">
-                本人確認書類と車両写真は、アカウント作成後にドライバープロフィールからアップロードします。
+                {t('driverRegister.documentsCopy')}
               </div>
 
               <label className="terms">
                 <input type="checkbox" required />
-                <span>提出した情報が正確であり、ドライバー利用規約および審査ポリシーに同意します。</span>
+                <span>{t('driverRegister.terms')}</span>
               </label>
               {status && <p className="form-status show">{status}</p>}
 
               <div className="driver-register-actions">
-                <button className="secondary-button" type="button" onClick={() => navigate('/login')}>戻る</button>
-                <button className="submit-button" type="submit" disabled={submitting}>{submitting ? '送信中...' : '申請を送信'}</button>
+                <button className="secondary-button" type="button" onClick={() => navigate('/login')}>{t('common.back')}</button>
+                <button className="submit-button" type="submit" disabled={submitting}>{submitting ? t('common.sending') : t('driverRegister.submit')}</button>
               </div>
             </form>
           </section>

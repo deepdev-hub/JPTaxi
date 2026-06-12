@@ -5,9 +5,12 @@ import { resolveAssetUrl } from '../api/accounts.js';
 import ProfileAvatarSlot from '../components/ProfileAvatarSlot.jsx';
 import PageShell from '../components/PageShell.jsx';
 import Topbar from '../components/Topbar.jsx';
+import { useI18n } from '../i18n/I18nProvider.jsx';
+import { translateApiError } from '../i18n/errors.js';
 import '../styles/app-pages.css';
 
 export default function DriverAvailablePage() {
+  const { t } = useI18n();
   const [ride, setRide] = useState(null);
   const [status, setStatus] = useState('');
 
@@ -18,12 +21,12 @@ export default function DriverAvailablePage() {
         if (!ignored) setRide(result?.type === 'trip' ? result.data : null);
       })
       .catch((error) => {
-        if (!ignored) setStatus(error.message || 'Unable to load the active ride.');
+        if (!ignored) setStatus(translateApiError(error, t, t('ride.refreshFailed')));
       });
     return () => {
       ignored = true;
     };
-  }, []);
+  }, [t]);
 
   const passenger = ride?.passenger;
   return (
@@ -31,11 +34,11 @@ export default function DriverAvailablePage() {
       <main className="available-screen">
         <Topbar />
         <section className="available-card">
-          {!ride ? <p className="empty-state">{status || 'No active ride.'}</p> : (
+          {!ride ? <p className="empty-state">{status || t('ride.noActive')}</p> : (
             <>
               <div className="arrival-row">
                 <div>
-                  <span>Pickup</span>
+                  <span>{t('ride.pickup')}</span>
                   <h1>{ride.rideRequest?.pickupAddress}</h1>
                 </div>
                 <strong>{Number(ride.actualDistanceKm).toFixed(1)} km</strong>
@@ -46,14 +49,14 @@ export default function DriverAvailablePage() {
                   fallbackText={passenger?.name || ''}
                 />
                 <div>
-                  <strong>{passenger?.name || 'Passenger'}</strong>
+                  <strong>{passenger?.name || t('common.passenger')}</strong>
                   <p>{ride.rideRequest?.dropoffAddress}</p>
                   <span>{passenger?.phone}</span>
                 </div>
               </div>
               <div className="card-actions">
-                <a className="submit-button" href={`tel:${passenger?.phone || ''}`}>Call</a>
-                <Link className="secondary-button" to="/messages/customer">Message</Link>
+                <a className="submit-button" href={`tel:${passenger?.phone || ''}`}>{t('ride.call')}</a>
+                <Link className="secondary-button" to="/messages/customer">{t('common.messages')}</Link>
               </div>
             </>
           )}

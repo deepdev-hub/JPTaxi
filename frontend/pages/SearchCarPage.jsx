@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { searchDrivers } from '../api/drivers.js';
 import { cancelRideRequest, getActiveRide } from '../api/rides.js';
 import InteractiveRouteMap from '../components/InteractiveRouteMap.jsx';
 import PageShell from '../components/PageShell.jsx';
 import Topbar from '../components/Topbar.jsx';
+import { useRideSocket } from '../hooks/useRideSocket.js';
+import { useI18n } from '../i18n/I18nProvider.jsx';
+import { translateApiError } from '../i18n/errors.js';
 import '../styles/search-car.css';
 
 function readRoute() {
@@ -16,67 +18,118 @@ function readRoute() {
   }
 }
 
-function normalizeDriver(driver) {
-  const latitude = Number(driver?.location?.latitude);
-  const longitude = Number(driver?.location?.longitude);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  return {
-    ...driver,
-    label: `${driver.lastName || ''} ${driver.firstName || ''}`.trim() || 'Taxi',
-    position: [latitude, longitude],
-  };
-}
-
 export default function SearchCarPage() {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [route] = useState(readRoute);
-  const [drivers, setDrivers] = useState([]);
+  const [dispatch, setDispatch] = useState({
+    phase: 'expanding',
+    radiusKm: 2,
+    offerExpiresAt: null,
+    diagnostic: null,
+  });
   const [status, setStatus] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const pickup = route?.pickup?.position;
   const requestId = Number(sessionStorage.getItem('jpTaxiRideRequestId'));
 
-  useEffect(() => {
-    if (!pickup) return;
-    searchDrivers({
-      lat: pickup[0],
-      lng: pickup[1],
-      radiusKm: 10,
-      maxLocationAgeMinutes: 30,
-      limit: 8,
-      sort: 'distance',
-    })
-      .then((data) => setDrivers((data?.drivers ?? []).map(normalizeDriver).filter(Boolean)))
-      .catch((error) => setStatus(error.message || 'Unable to find nearby drivers.'));
-  }, [pickup]);
+  const openTrip = useCallback((tripId) => {
+    if (tripId) sessionStorage.setItem('jpTaxiTripId', String(tripId));
+    navigate('/ride-status', { replace: true });
+  }, [navigate]);
+
+  const refresh = useCallback(async () => {
+    const active = await getActiveRide();
+    if (active?.type === 'trip') {
+      openTrip(active.data.tripId);
+      return;
+    }
+    if (active?.type === 'request') {
+      setDispatch({
+        phase: active.dispatch?.phase || 'expanding',
+        radiusKm: Number(active.dispatch?.radiusKm) || 2,
+        offerExpiresAt: active.dispatch?.offerExpiresAt || null,
+        diagnostic: active.dispatch?.diagnostic || null,
+      });
+      setStatus('');
+      return;
+    }
+    setStatus(t('dispatch.customer.inactive'));
+  }, [openTrip, t]);
+
+  useRideSocket({
+    requestId,
+    handlers: {
+      dispatchRadiusUpdated: (payload) => {
+        if (Number(payload?.requestId) !== requestId) return;
+        setDispatch((current) => ({
+          ...current,
+          phase: 'expanding',
+          radiusKm: Number(payload.radiusKm) || current.radiusKm,
+          offerExpiresAt: null,
+          diagnostic: null,
+        }));
+      },
+      dispatchOfferCreated: (payload) => {
+        if (Number(payload?.requestId) !== requestId) return;
+        setDispatch({
+          phase: 'waiting_driver',
+          radiusKm: Number(payload.radiusKm) || 2,
+          offerExpiresAt: payload.offerExpiresAt || null,
+          diagnostic: null,
+        });
+      },
+      dispatchReset: (payload) => {
+        if (Number(payload?.requestId) !== requestId) return;
+        setDispatch({
+          phase: 'expanding',
+          radiusKm: Number(payload.radiusKm) || 2,
+          offerExpiresAt: null,
+          diagnostic: null,
+        });
+      },
+      rideAccepted: (payload) => {
+        if (Number(payload?.requestId) === requestId) openTrip(payload.tripId);
+      },
+      driverCancelledRide: () => {
+        setDispatch({ phase: 'expanding', radiusKm: 2, offerExpiresAt: null, diagnostic: null });
+        refresh().catch(() => {});
+      },
+    },
+  });
 
   useEffect(() => {
     let stopped = false;
     async function poll() {
       try {
-        const active = await getActiveRide();
-        if (stopped) return;
-        if (active?.type === 'trip') {
-          sessionStorage.setItem('jpTaxiTripId', String(active.data.tripId));
-          navigate('/ride-status', { replace: true });
-        } else if (!active) {
-          setStatus('The ride request is no longer active.');
-        }
+        await refresh();
       } catch (error) {
-        if (!stopped) setStatus(error.message || 'Unable to refresh the ride request.');
+        if (!stopped) setStatus(translateApiError(error, t, t('dispatch.customer.refreshFailed')));
       }
     }
     poll();
-    const timer = window.setInterval(poll, 2500);
+    const timer = window.setInterval(poll, 2000);
     return () => {
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [navigate]);
+  }, [refresh, t]);
 
   const routePoints = useMemo(() => route ? [
-    { key: 'pickup', label: route.pickup.name, position: route.pickup.position, type: 'pickup' },
-    { key: 'destination', label: route.destination.name, position: route.destination.position, type: 'destination' },
+    {
+      key: 'pickup',
+      label: route.pickup.name,
+      meta: route.pickup.address,
+      position: route.pickup.position,
+      type: 'pickup',
+    },
+    {
+      key: 'destination',
+      label: route.destination.name,
+      meta: route.destination.address,
+      position: route.destination.position,
+      type: 'destination',
+    },
   ] : [], [route]);
 
   async function cancel() {
@@ -87,43 +140,77 @@ export default function SearchCarPage() {
       sessionStorage.removeItem('jpTaxiRideRequestId');
       navigate('/home', { replace: true });
     } catch (error) {
-      setStatus(error.message || 'Unable to cancel the ride request.');
+      setStatus(translateApiError(error, t, t('dispatch.customer.cancelFailed')));
       setCancelling(false);
     }
   }
 
   if (!route || !requestId) {
-    return <PageShell><main className="search-screen"><Topbar /><p className="empty-state">No active ride request.</p></main></PageShell>;
+    return (
+      <PageShell>
+        <main className="search-screen">
+          <Topbar />
+          <p className="empty-state">{t('dispatch.customer.inactive')}</p>
+        </main>
+      </PageShell>
+    );
   }
 
   return (
     <PageShell>
       <main className="search-screen">
-        <Topbar />
-        <section className="map-stage">
+        <Topbar>
+          <div className="location-chip" aria-label={t('dispatch.customer.pickupLabel')}>
+            <span className="location-dot" aria-hidden="true" />
+            <span>{route.pickup.address || route.pickup.name}</span>
+          </div>
+        </Topbar>
+        <section className="map-stage" aria-label={t('dispatch.customer.mapLabel')}>
           <InteractiveRouteMap
             alternateRoutePath={[]}
             className="search-background-map"
             currentLocation={pickup}
-            nearbyDrivers={drivers}
+            fitToRoute
+            interactive
+            mapCenter={pickup}
+            mapZoom={15}
+            nearbyDrivers={[]}
             route={routePoints}
             routePath={route.routePath}
+            routeSummary={route.routeMetrics
+              ? `${route.routeMetrics.distance || ''} - ${route.routeMetrics.duration || ''}`
+              : ''}
+            scrollWheelZoom
+            showControls
             showCurrentLocation
             showDetails={false}
             showDriver={false}
+            showMarkers
+            showRoute={Boolean(route.routePath?.length)}
           />
-          <section className="status-card">
+          <section className="status-card" aria-labelledby="search-title">
             <div className="status-info">
-              <div className="spinner" />
+              <div className="spinner" aria-hidden="true" />
               <div className="text-group">
-                <h1>Finding a driver...</h1>
-                <p>{drivers.length ? `${drivers.length} online drivers are nearby.` : 'Waiting for an online driver.'}</p>
+                <div className="waiting-title-row">
+                  <h1 id="search-title">{t('dispatch.customer.title')}</h1>
+                </div>
+                <p>
+                  {dispatch.phase === 'waiting_driver'
+                    ? t('dispatch.customer.waiting', { radius: dispatch.radiusKm })
+                    : t('dispatch.customer.expanding', { radius: dispatch.radiusKm })}
+                </p>
+                {dispatch.phase === 'expanding' && dispatch.diagnostic
+                  ? <small>{t(`dispatch.diagnostic.${dispatch.diagnostic}`)}</small>
+                  : null}
                 {status ? <small role="alert">{status}</small> : null}
               </div>
             </div>
-            <button className="reservation-cancel-button" disabled={cancelling} onClick={cancel} type="button">
-              {cancelling ? 'Cancelling...' : 'Cancel booking'}
-            </button>
+            <div className="card-actions">
+              <button className="reservation-cancel-button" disabled={cancelling} onClick={cancel} type="button">
+                {cancelling ? t('common.cancelling') : t('dispatch.customer.cancelReservation')}
+              </button>
+            </div>
           </section>
         </section>
       </main>

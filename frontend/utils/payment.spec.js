@@ -21,4 +21,22 @@ describe('buildPaymentPayload', () => {
       idempotencyKey: 'payment-17-unique',
     });
   });
+
+  it('builds a simulated payment without a saved-card id', () => {
+    const payload = buildPaymentPayload({
+      tripId: 18,
+      paymentMethod: {
+        code: 'PAYPAY',
+      },
+      password: 'user-entered-secret',
+      idempotencyKey: 'payment-18-paypay',
+    });
+
+    expect(payload).toEqual({
+      tripId: 18,
+      paymentMethod: 'PAYPAY',
+      password: 'user-entered-secret',
+      idempotencyKey: 'payment-18-paypay',
+    });
+  });
 });

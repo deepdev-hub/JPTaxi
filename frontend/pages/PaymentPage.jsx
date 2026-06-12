@@ -5,32 +5,48 @@ import { getActiveRide, processRidePayment } from '../api/rides.js';
 import PageShell from '../components/PageShell.jsx';
 import { setLastInvoiceTripId } from '../utils/invoiceSession.js';
 import { buildPaymentPayload } from '../utils/payment.js';
+import { useI18n } from '../i18n/I18nProvider.jsx';
+import { translateApiError } from '../i18n/errors.js';
 import '../styles/app-pages.css';
 
-function formatVnd(amount) {
-  return `${new Intl.NumberFormat('vi-VN').format(Number(amount) || 0)} VND`;
-}
-
-function formatTime(value) {
-  if (!value) return '';
-  return new Intl.DateTimeFormat('ja-JP', {
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value));
-}
+const simulatedMethods = [
+  { key: 'simulated-cash', code: 'CASH', labelKey: 'payment.cash', icon: '$' },
+  { key: 'simulated-paypay', code: 'PAYPAY', label: 'PayPay', icon: 'P' },
+  { key: 'simulated-apple-pay', code: 'APPLE_PAY', label: 'Apple Pay', icon: 'A' },
+];
 
 export default function PaymentPage() {
   const navigate = useNavigate();
+  const { formatDateTime, formatNumber, t } = useI18n();
+  const formatVnd = (amount) => `${formatNumber(Number(amount) || 0)} VND`;
+  const formatTime = (value) => value ? formatDateTime(value, {
+    hour: '2-digit',
+    minute: '2-digit',
+  }) : '';
   const [trip, setTrip] = useState(null);
   const [methods, setMethods] = useState([]);
-  const [selectedId, setSelectedId] = useState('');
+  const [selectedKey, setSelectedKey] = useState('');
+  const [methodOpen, setMethodOpen] = useState(false);
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState('');
+  const paymentOptions = useMemo(() => [
+    ...methods.map((item) => ({
+      ...item,
+      key: `card-${item.paymentMethodId}`,
+      code: item.brand,
+      label: t('payment.cardEnding', { brand: item.brand, lastFour: item.lastFour }),
+      icon: 'C',
+    })),
+    ...simulatedMethods.map((item) => ({
+      ...item,
+      label: item.labelKey ? t(item.labelKey) : item.label,
+    })),
+  ], [methods, t]);
   const selectedMethod = useMemo(
-    () => methods.find((item) => String(item.paymentMethodId) === selectedId) ?? null,
-    [methods, selectedId],
+    () => paymentOptions.find((item) => item.key === selectedKey) ?? null,
+    [paymentOptions, selectedKey],
   );
 
   useEffect(() => {
@@ -39,7 +55,11 @@ export default function PaymentPage() {
       .then(([activeRide, paymentMethods]) => {
         if (ignored) return;
         if (activeRide?.type !== 'trip') {
-          setStatus('There is no active trip ready for payment.');
+          setStatus(t('payment.noTrip'));
+          return;
+        }
+        if (!activeRide.paymentRequested) {
+          setStatus(t('payment.notRequested'));
           return;
         }
         const nextTrip = activeRide.data;
@@ -47,17 +67,17 @@ export default function PaymentPage() {
         setTrip(nextTrip);
         setMethods(nextMethods);
         const preferred = nextMethods.find((item) => item.isDefault) ?? nextMethods[0];
-        setSelectedId(preferred ? String(preferred.paymentMethodId) : '');
+        setSelectedKey(preferred ? `card-${preferred.paymentMethodId}` : 'simulated-cash');
         sessionStorage.setItem('jpTaxiTripId', String(nextTrip.tripId));
       })
-      .catch((error) => setStatus(error.message || 'Unable to load payment details.'))
+      .catch((error) => setStatus(translateApiError(error, t, t('payment.loadFailed'))))
       .finally(() => {
         if (!ignored) setLoading(false);
       });
     return () => {
       ignored = true;
     };
-  }, []);
+  }, [t]);
 
   async function confirmPayment(event) {
     event.preventDefault();
@@ -74,7 +94,7 @@ export default function PaymentPage() {
       setLastInvoiceTripId(trip.tripId);
       navigate(`/invoice?tripId=${trip.tripId}`, { replace: true });
     } catch (error) {
-      setStatus(error.message || 'Payment failed.');
+      setStatus(translateApiError(error, t, t('payment.failed')));
       setSubmitting(false);
     }
   }
@@ -86,14 +106,14 @@ export default function PaymentPage() {
       <main className="payment-complete-screen">
         <section className="receipt-card">
           <header className="receipt-header">
-            <span>JP Taxi</span>
-            <h1>Trip payment</h1>
-            <p>Confirm the real trip details before paying.</p>
+            <span>{t('payment.arrived')}</span>
+            <h1>{t('payment.destinationReached')}</h1>
+            <p>{t('payment.review')}</p>
           </header>
 
           <div className="receipt-body">
-            {loading ? <p role="status">Loading payment details...</p> : null}
-            {!loading && !trip ? <p className="empty-state">{status || 'No trip found.'}</p> : null}
+            {loading ? <p role="status">{t('payment.loading')}</p> : null}
+            {!loading && !trip ? <p className="empty-state">{status || t('payment.noTrip')}</p> : null}
             {trip ? (
               <form onSubmit={confirmPayment}>
                 <section className="receipt-route">
@@ -101,7 +121,7 @@ export default function PaymentPage() {
                     <span className="route-dot green" />
                     <div>
                       <strong>{request?.pickupAddress}</strong>
-                      <small>{formatTime(trip.startTime)} departure</small>
+                      <small>{formatTime(trip.startTime)} {t('payment.departure')}</small>
                     </div>
                   </div>
                   <div>
@@ -115,39 +135,36 @@ export default function PaymentPage() {
 
                 <section className="receipt-billing">
                   <div>
-                    <span>Trip fare</span>
+                    <span>{t('booking.tripFare')}</span>
                     <strong>{formatVnd(trip.rawFareVnd ?? trip.finalFareVnd)}</strong>
                   </div>
+                  <div>
+                    <span>{t('payment.serviceFee')}</span>
+                    <strong>
+                      {formatVnd(
+                        Math.max(
+                          0,
+                          Number(trip.finalFareVnd) - Number(trip.rawFareVnd ?? trip.finalFareVnd),
+                        ),
+                      )}
+                    </strong>
+                  </div>
                   <div className="receipt-total">
-                    <span>Total</span>
+                    <span>{t('payment.total')}</span>
                     <strong>{formatVnd(trip.finalFareVnd)}</strong>
                   </div>
                 </section>
 
-                <label className="payment-field">
-                  Saved payment method
-                  <select
-                    value={selectedId}
-                    onChange={(event) => setSelectedId(event.target.value)}
-                    required
-                  >
-                    <option value="">Select a payment method</option>
-                    {methods.map((item) => (
-                      <option key={item.paymentMethodId} value={item.paymentMethodId}>
-                        {item.brand} ending in {item.lastFour}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                {!methods.length ? (
-                  <p className="empty-state">
-                    Add a payment method in <Link to="/user-info/payment">account settings</Link>.
-                  </p>
-                ) : null}
+                <section className="payment-preview">
+                  <div>
+                    <span aria-hidden="true">{selectedMethod?.icon || 'C'}</span>
+                    <strong>{selectedMethod?.label || t('payment.chooseMethod')}</strong>
+                  </div>
+                  <button onClick={() => setMethodOpen(true)} type="button">{t('payment.change')}</button>
+                </section>
 
                 <label className="payment-field">
-                  Account password
+                  {t('payment.accountPassword')}
                   <input
                     autoComplete="current-password"
                     onChange={(event) => setPassword(event.target.value)}
@@ -159,19 +176,67 @@ export default function PaymentPage() {
 
                 {status ? <p className="payment-status-text" role="alert">{status}</p> : null}
                 <div className="receipt-actions">
-                  <Link className="payment-back-link" to="/ride-status">Back</Link>
+                  <Link className="payment-back-link" to="/ride-status">{t('common.back')}</Link>
                   <button
+                    aria-label={t('payment.confirm')}
                     className="pay-confirm"
                     disabled={submitting || !selectedMethod}
                     type="submit"
                   >
-                    {submitting ? 'Processing...' : 'Pay now'}
+                    {submitting ? t('common.processing') : t('payment.confirm')}
                   </button>
+                  <Link className="support-link" to="/messages/driver">{t('payment.contactSupport')}</Link>
                 </div>
               </form>
             ) : null}
           </div>
         </section>
+
+        <div
+          className={`payment-method-backdrop ${methodOpen ? 'open' : ''}`}
+          onClick={() => setMethodOpen(false)}
+        >
+          <section
+            aria-labelledby="payment-method-title"
+            aria-modal="true"
+            className="payment-method-modal"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <header>
+              <h2 id="payment-method-title">{t('payment.chooseMethod')}</h2>
+              <button
+                aria-label={t('common.close')}
+                onClick={() => setMethodOpen(false)}
+                type="button"
+              >
+                x
+              </button>
+            </header>
+            <div className="payment-method-list">
+              {paymentOptions.map((item) => (
+                <button
+                  aria-label={item.label}
+                  className={selectedKey === item.key ? 'selected' : ''}
+                  key={item.key}
+                  onClick={() => setSelectedKey(item.key)}
+                  type="button"
+                >
+                  <span aria-hidden="true">{item.icon}</span>
+                  <strong>{item.label}</strong>
+                  <em>{selectedKey === item.key ? t('common.selected') : t('common.select')}</em>
+                </button>
+              ))}
+            </div>
+            <button
+              className="payment-method-confirm"
+              onClick={() => setMethodOpen(false)}
+              type="button"
+            >
+              {t('payment.useMethod')}
+            </button>
+          </section>
+        </div>
       </main>
     </PageShell>
   );

@@ -18,6 +18,8 @@ import { CustomerPaymentMethod } from '../../entities/customer-payment-method.en
 import { DriverBankAccount } from '../../entities/driver-bank-account.entity';
 import { PricingRule } from '../../entities/pricing-rule.entity';
 import { MapModule } from '../map/map.module';
+import { RideSearchDriverExclusion } from '../../entities/ride-search-driver-exclusion.entity';
+import { DispatchSchedulerService } from './dispatch-scheduler.service';
 
 @Module({
   imports: [
@@ -36,11 +38,12 @@ import { MapModule } from '../map/map.module';
       CustomerPaymentMethod,
       DriverBankAccount,
       PricingRule,
+      RideSearchDriverExclusion,
     ]),
     AuthModule,
   ],
   controllers: [RideController],
-  providers: [RideService, RideGateway],
+  providers: [RideService, RideGateway, DispatchSchedulerService],
   exports: [RideService, RideGateway],
 })
 export class RideModule {}

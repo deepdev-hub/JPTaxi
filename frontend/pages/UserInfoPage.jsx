@@ -1,5 +1,5 @@
 import { Link, NavLink, useNavigate, useParams } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AvatarCropper from '../components/AvatarCropper.jsx';
 import Footer from '../components/Footer.jsx';
 import Modal from '../components/Modal.jsx';
@@ -14,6 +14,7 @@ import {
 import { changePassword } from '../api/auth.js';
 import {
   addPaymentMethod,
+  getLoginHistory,
   getNotificationPreferences,
   getPaymentMethods,
   updateNotificationPreferences,
@@ -25,6 +26,8 @@ import {
   profileText,
   setStoredProfileLanguage,
 } from '../i18n/profileLanguage.js';
+import { useI18n } from '../i18n/I18nProvider.jsx';
+import { translateApiError } from '../i18n/errors.js';
 import '../styles/app-pages.css';
 import { clearAuthSession } from '../utils/session.js';
 
@@ -45,6 +48,30 @@ const defaultVisaCard = {
   billingAddress: '',
 };
 
+const cardMessages = {
+  ja: {
+    holderRequired: 'カード名義を入力してください。',
+    numberInvalid: 'カード番号は12〜19桁で入力してください。',
+    securityInvalid: 'セキュリティコードは3桁または4桁で入力してください。',
+    expiryInvalid: '有効な有効期限をMM/YYYY形式で入力してください。',
+    saveFailed: '支払い方法を追加できませんでした。',
+  },
+  vi: {
+    holderRequired: 'Vui lòng nhập tên chủ thẻ.',
+    numberInvalid: 'Số thẻ phải có từ 12 đến 19 chữ số.',
+    securityInvalid: 'Mã bảo mật phải có 3 hoặc 4 chữ số.',
+    expiryInvalid: 'Vui lòng nhập hạn dùng hợp lệ theo định dạng MM/YYYY.',
+    saveFailed: 'Không thể thêm phương thức thanh toán.',
+  },
+  en: {
+    holderRequired: 'Card holder is required.',
+    numberInvalid: 'Card number must contain 12 to 19 digits.',
+    securityInvalid: 'Security code must contain 3 or 4 digits.',
+    expiryInvalid: 'Enter a valid future expiry date in MM/YYYY format.',
+    saveFailed: 'Unable to add payment method.',
+  },
+};
+
 function normalizeCardNumber(value) {
   return String(value ?? '').replace(/\D/g, '').slice(0, 16);
 }
@@ -54,7 +81,7 @@ function formatCardNumber(value) {
 }
 
 function formatExpiry(value) {
-  const digits = String(value ?? '').replace(/\D/g, '').slice(0, 4);
+  const digits = String(value ?? '').replace(/\D/g, '').slice(0, 6);
   return digits.length <= 2 ? digits : `${digits.slice(0, 2)}/${digits.slice(2)}`;
 }
 
@@ -79,7 +106,7 @@ function normalizeProfile(profile = {}) {
     ...emptyProfile,
     ...profile,
     birthDate: profile.birthDate ? String(profile.birthDate).slice(0, 10) : emptyProfile.birthDate,
-    avatarUrl: resolveAssetUrl(profile.avatarUrl),
+    avatarUrl: profile.avatarUrl || '',
     loginHistory: Array.isArray(profile.loginHistory) ? profile.loginHistory : [],
   };
 }
@@ -113,6 +140,7 @@ function formatDate(value, locale = 'ja-JP') {
 }
 
 export default function UserInfoPage() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const { section } = useParams();
   const activeSection = userMenu.some((item) => item.id === section) ? section : 'profile';
@@ -135,9 +163,15 @@ export default function UserInfoPage() {
   });
   const [avatarFileName, setAvatarFileName] = useState('');
   const [avatarFile, setAvatarFile] = useState(null);
-  const [croppedAvatarFile, setCroppedAvatarFile] = useState(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState('');
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarStatus, setAvatarStatus] = useState('');
+  const [cardStatus, setCardStatus] = useState('');
+  const [cardSaving, setCardSaving] = useState(false);
+  const [loginHistory, setLoginHistory] = useState([]);
+  const [loginHistoryLoading, setLoginHistoryLoading] = useState(false);
+  const [loginHistoryError, setLoginHistoryError] = useState('');
+  const avatarCropperRef = useRef(null);
   const text = profileText[language] || profileText.ja;
   const common = text.common;
   const userText = text.user;
@@ -158,7 +192,7 @@ export default function UserInfoPage() {
           setPaymentMethods(Array.isArray(methods) ? methods : []);
         }
       } catch (error) {
-        if (!ignore) setStatus(error.message || text.status.userLoadFailed);
+        if (!ignore) setStatus(translateApiError(error, t, text.status.userLoadFailed));
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -182,9 +216,31 @@ export default function UserInfoPage() {
     if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
   }, [avatarPreviewUrl]);
 
+  useEffect(() => {
+    if (activeSection !== 'security') return undefined;
+
+    let ignored = false;
+    setLoginHistoryError('');
+    setLoginHistoryLoading(true);
+    getLoginHistory()
+      .then((rows) => {
+        if (!ignored) setLoginHistory(Array.isArray(rows) ? rows.filter(Boolean) : []);
+      })
+      .catch((error) => {
+        if (!ignored) setLoginHistoryError(translateApiError(error, t, text.status.userLoadFailed));
+      })
+      .finally(() => {
+        if (!ignored) setLoginHistoryLoading(false);
+      });
+
+    return () => {
+      ignored = true;
+    };
+  }, [activeSection, text.status.userLoadFailed]);
+
   const fullName = getDisplayName(profile, common.unregistered);
   const avatarInitial = fullName.slice(0, 1) || profile.lastName.slice(0, 1);
-  const avatar = profile.avatarUrl;
+  const avatar = resolveAssetUrl(profile.avatarUrl);
 
   const modalTitle = {
     account: userText.modal.account,
@@ -205,9 +261,17 @@ export default function UserInfoPage() {
   function handleAvatarChange(event) {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setAvatarStatus(t('profile.imageType'));
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarStatus(t('profile.imageSize'));
+      return;
+    }
+    setAvatarStatus('');
     setAvatarFileName(file.name);
     setAvatarFile(file);
-    setCroppedAvatarFile(null);
     setAvatarPreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
       return URL.createObjectURL(file);
@@ -215,32 +279,41 @@ export default function UserInfoPage() {
   }
 
   async function handleAvatarUpload() {
-    if (!avatarFile || !croppedAvatarFile) return;
+    if (!avatarFile) {
+      setAvatarStatus(t('profile.selectImage'));
+      return;
+    }
     setAvatarUploading(true);
+    setAvatarStatus('');
     try {
-      const url = await uploadAvatar(croppedAvatarFile);
-      if (url) {
-        const updated = await updateCustomerProfile({
-          lastName: profile.lastName,
-          firstName: profile.firstName,
-          gender: profile.gender,
-          birthDate: profile.birthDate,
-          phone: profile.phone,
-          email: profile.email,
-          avatarUrl: url,
-        });
-        setProfile(normalizeProfile(updated));
-        setStatus(text.status.dbSaved);
-        setModal(null);
-      }
+      const croppedFile = await avatarCropperRef.current?.createCroppedFile();
+      if (!croppedFile) throw new Error(t('profile.cropFailed'));
+      const url = await uploadAvatar(croppedFile);
+      if (!url) throw new Error('The avatar upload returned no file URL.');
+      const updated = await updateCustomerProfile({
+        lastName: profile.lastName,
+        firstName: profile.firstName,
+        gender: profile.gender,
+        birthDate: profile.birthDate,
+        phone: profile.phone,
+        email: profile.email,
+        avatarUrl: url,
+      });
+      setProfile(normalizeProfile(updated));
+      setStatus(text.status.dbSaved);
+      setAvatarFile(null);
+      setAvatarFileName('');
+      setAvatarStatus('');
+      setModal(null);
     } catch (error) {
-      setStatus(error.message || text.status.avatarFailed);
+      setAvatarStatus(translateApiError(error, t, text.status.avatarFailed));
     } finally {
       setAvatarUploading(false);
     }
   }
 
   function updateVisaCardField(field, value) {
+    setCardStatus('');
     setVisaCard((current) => ({
       ...current,
       [field]:
@@ -270,7 +343,7 @@ export default function UserInfoPage() {
       setStatus(text.status.dbSaved);
     } catch (error) {
       setModal('error');
-      setStatus(error.message || text.status.userSaveFailed);
+      setStatus(translateApiError(error, t, text.status.userSaveFailed));
     }
   }
 
@@ -293,39 +366,68 @@ export default function UserInfoPage() {
       setNotifications(saved);
       setStatus(text.status.dbSaved);
     } catch (error) {
-      setStatus(error.message || 'Unable to save notification settings.');
+      setStatus(translateApiError(error, t, t('profile.notificationsFailed')));
     }
   }
 
   async function savePaymentMethod() {
-    const [month, shortYear] = visaCard.expiry.split('/').map(Number);
-    const expiryYear = shortYear < 100 ? 2000 + shortYear : shortYear;
+    const messages = cardMessages[language] || cardMessages.en;
+    const holderName = visaCard.holderName.trim();
+    const cardNumber = normalizeCardNumber(visaCard.number);
+    if (!holderName) {
+      setCardStatus(messages.holderRequired);
+      return;
+    }
+    if (cardNumber.length < 12 || cardNumber.length > 19) {
+      setCardStatus(messages.numberInvalid);
+      return;
+    }
+    if (!/^\d{3,4}$/.test(visaCard.securityCode)) {
+      setCardStatus(messages.securityInvalid);
+      return;
+    }
+    if (!/^\d{2}\/\d{4}$/.test(visaCard.expiry)) {
+      setCardStatus(messages.expiryInvalid);
+      return;
+    }
+    const [month, expiryYear] = visaCard.expiry.split('/').map(Number);
+    const now = new Date();
+    const expiryIsPast =
+      expiryYear < now.getFullYear()
+      || (expiryYear === now.getFullYear() && month < now.getMonth() + 1);
+    if (month < 1 || month > 12 || expiryIsPast) {
+      setCardStatus(messages.expiryInvalid);
+      return;
+    }
+    setCardSaving(true);
+    setCardStatus('');
     try {
-      const saved = await addPaymentMethod({
+      await addPaymentMethod({
         brand: 'VISA',
-        holderName: visaCard.holderName,
-        cardNumber: visaCard.number,
+        holderName,
+        cardNumber,
         securityCode: visaCard.securityCode,
         expiryMonth: month,
         expiryYear,
         billingAddress: visaCard.billingAddress,
         isDefault: paymentMethods.length === 0,
       });
-      setPaymentMethods((items) => [
-        ...items.map((item) => ({ ...item, isDefault: false })),
-        saved,
-      ]);
+      const methods = await getPaymentMethods();
+      setPaymentMethods(Array.isArray(methods) ? methods.filter(Boolean) : []);
       setVisaCard(defaultVisaCard);
+      setCardStatus('');
       setModal(null);
       setStatus(text.status.dbSaved);
     } catch (error) {
-      setStatus(error.message || 'Unable to add payment method.');
+      setCardStatus(translateApiError(error, t, messages.saveFailed));
+    } finally {
+      setCardSaving(false);
     }
   }
 
   async function savePassword() {
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setStatus('New password confirmation does not match.');
+      setStatus(t('profile.passwordMismatch'));
       return;
     }
     try {
@@ -337,8 +439,42 @@ export default function UserInfoPage() {
       setModal(null);
       setStatus(text.status.dbSaved);
     } catch (error) {
-      setStatus(error.message || 'Unable to change password.');
+      setStatus(translateApiError(error, t, t('profile.passwordFailed')));
     }
+  }
+
+  async function openLoginHistory() {
+    setModal('loginHistory');
+    if (activeSection === 'security') return;
+
+    setLoginHistory([]);
+    setLoginHistoryError('');
+    setLoginHistoryLoading(true);
+    try {
+      const rows = await getLoginHistory();
+      setLoginHistory(Array.isArray(rows) ? rows.filter(Boolean) : []);
+    } catch (error) {
+      setLoginHistoryError(translateApiError(error, t, text.status.userLoadFailed));
+    } finally {
+      setLoginHistoryLoading(false);
+    }
+  }
+
+  function renderLoginHistory() {
+    if (loginHistoryLoading) return <span role="status">{common.loading}</span>;
+    if (loginHistoryError) return <span role="alert">{loginHistoryError}</span>;
+    if (!loginHistory.length) return <span>{userText.modal.emptyLoginHistory}</span>;
+
+    return loginHistory.map((item) => (
+      <article
+        className="account-card"
+        key={`${item.loginTime}-${item.ipAddress}-${item.userAgent}`}
+      >
+        <strong>{new Date(item.loginTime).toLocaleString(text.locale)}</strong>
+        <span>{item.ipAddress || common.unregistered}</span>
+        <small>{item.userAgent || common.unregistered}</small>
+      </article>
+    ));
   }
 
   function renderContent() {
@@ -354,10 +490,23 @@ export default function UserInfoPage() {
                 {index === 1 ? (
                   <NavLink className="link-btn" to="/user-info/profile">{action}</NavLink>
                 ) : (
-                  <button className="link-btn" type="button" onClick={() => setModal(index === 0 ? 'password' : 'loginHistory')}>{action}</button>
+                  <button
+                    className="link-btn"
+                    type="button"
+                    onClick={() => {
+                      if (index === 0) setModal('password');
+                      else openLoginHistory();
+                    }}
+                  >
+                    {action}
+                  </button>
                 )}
               </article>
             ))}
+          </div>
+          <div className="setting-list stack" aria-live="polite">
+            <h3>{userText.modal.loginHistory}</h3>
+            {renderLoginHistory()}
           </div>
         </section>
       );
@@ -398,13 +547,22 @@ export default function UserInfoPage() {
         <section className="panel zip-profile-panel narrow-panel">
           <h2 className="panel-title">{userText.paymentTitle}</h2>
           <div className="setting-list">
-            {paymentMethods.length ? paymentMethods.map((item) => (
+            {paymentMethods.length ? paymentMethods.filter(Boolean).map((item) => (
               <article className="account-card" key={item.paymentMethodId}>
                 <strong>{item.isDefault ? userText.defaultPayment : item.brand}</strong>
                 <span>{item.brand} **** {item.lastFour}</span>
               </article>
-            )) : <p className="empty-state">No saved payment methods.</p>}
-            <button className="submit-button profile-save-button" type="button" onClick={() => setModal('addCard')}>{common.addVisaCard}</button>
+            )) : <p className="empty-state">{t('profile.noPaymentMethods')}</p>}
+            <button
+              className="submit-button profile-save-button"
+              type="button"
+              onClick={() => {
+                setCardStatus('');
+                setModal('addCard');
+              }}
+            >
+              {common.addVisaCard}
+            </button>
           </div>
         </section>
       );
@@ -418,7 +576,7 @@ export default function UserInfoPage() {
             <span>{userText.displayLanguage}</span>
             <select value={language} onChange={(event) => changeLanguage(event.target.value)}>
               {languageOptions.map((option) => (
-                <option value={option.value} key={option.value}>{option.label}</option>
+                <option value={option.value} key={option.value}>{text.languageNames[option.value]}</option>
               ))}
             </select>
           </label>
@@ -491,7 +649,7 @@ export default function UserInfoPage() {
             <div className="setting-list">
               <Link className="account-card profile-info-card" to="/user-info/language">
                 <span className="account-icon">🌐</span>
-                <span><strong>{userText.displayLanguage}</strong><small>{languageOptions.find((item) => item.value === language)?.label || '日本語'}</small></span>
+                <span><strong>{userText.displayLanguage}</strong><small>{text.languageNames[language]}</small></span>
               </Link>
               <Link className="account-card profile-info-card" to="/user-info/payment">
                 <span className="account-icon">💳</span>
@@ -518,7 +676,16 @@ export default function UserInfoPage() {
                 <article className="security-item" key={title}>
                   <strong>{title}</strong>
                   <span>{copy}</span>
-                  <button className="link-btn" type="button" onClick={() => setModal(index === 0 ? 'password' : 'loginHistory')}>{action}</button>
+                  <button
+                    className="link-btn"
+                    type="button"
+                    onClick={() => {
+                      if (index === 0) setModal('password');
+                      else openLoginHistory();
+                    }}
+                  >
+                    {action}
+                  </button>
                 </article>
               ))}
             </div>
@@ -592,11 +759,17 @@ export default function UserInfoPage() {
                 </span>
                 <input type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={handleAvatarChange} />
               </label>
-              <AvatarCropper src={avatarPreviewUrl} fileName={avatarFileName} onCrop={setCroppedAvatarFile} />
+              <AvatarCropper
+                ref={avatarCropperRef}
+                src={avatarPreviewUrl}
+                fileName={avatarFileName}
+                showApplyButton={false}
+              />
+              {avatarStatus ? <p className="field-error" role="alert">{avatarStatus}</p> : null}
               <button
                 className="submit-button profile-save-button"
                 type="button"
-                disabled={!croppedAvatarFile || avatarUploading}
+                disabled={!avatarFile || avatarUploading}
                 onClick={handleAvatarUpload}
               >
                 {avatarUploading ? common.uploading : common.save}
@@ -608,16 +781,24 @@ export default function UserInfoPage() {
               <div className="visa-card-preview">
                 <span>VISA</span>
                 <strong>**** **** **** {getCardLastFour(visaCard.number)}</strong>
-                <small>{visaCard.holderName || common.cardHolder} · {visaCard.expiry || 'MM/YY'}</small>
+                <small>{visaCard.holderName || common.cardHolder} · {visaCard.expiry || 'MM/YYYY'}</small>
               </div>
               <div className="form-grid">
                 <label className="field full"><span>{common.cardHolder}</span><input value={visaCard.holderName} onChange={(event) => updateVisaCardField('holderName', event.target.value)} /></label>
                 <label className="field full"><span>{common.cardNumber}</span><input inputMode="numeric" value={formatCardNumber(visaCard.number)} onChange={(event) => updateVisaCardField('number', event.target.value)} /></label>
-                <label><span>{common.expiryDate}</span><input inputMode="numeric" placeholder="MM/YY" value={visaCard.expiry} onChange={(event) => updateVisaCardField('expiry', event.target.value)} /></label>
+                <label><span>{common.expiryDate}</span><input inputMode="numeric" placeholder="MM/YYYY" value={visaCard.expiry} onChange={(event) => updateVisaCardField('expiry', event.target.value)} /></label>
                 <label><span>{common.securityCode}</span><input type="password" inputMode="numeric" maxLength={4} value={visaCard.securityCode} onChange={(event) => updateVisaCardField('securityCode', event.target.value)} /></label>
                 <label className="field full"><span>{common.billingAddress}</span><input value={visaCard.billingAddress} onChange={(event) => updateVisaCardField('billingAddress', event.target.value)} /></label>
               </div>
-              <button className="submit-button profile-save-button" type="button" onClick={savePaymentMethod}>{common.saveCard}</button>
+              {cardStatus ? <p className="field-error" role="alert">{cardStatus}</p> : null}
+              <button
+                className="submit-button profile-save-button"
+                type="button"
+                disabled={cardSaving}
+                onClick={savePaymentMethod}
+              >
+                {cardSaving ? common.loading : common.saveCard}
+              </button>
             </div>
           )}
           {modal === 'password' && (
@@ -630,9 +811,7 @@ export default function UserInfoPage() {
           )}
           {modal === 'loginHistory' && (
             <div className="modal-list">
-              {profile.loginHistory.length ? profile.loginHistory.map((item) => (
-                <span key={`${item.loginTime}-${item.ipAddress}`}>{formatDate(item.loginTime, text.locale)} - {item.ipAddress || 'unknown'}</span>
-              )) : <span>{userText.modal.emptyLoginHistory}</span>}
+              {renderLoginHistory()}
             </div>
           )}
           {modal && !['account', 'avatar', 'card', 'addCard', 'password', 'loginHistory'].includes(modal) && <p className="modal-copy">{status || userText.modal.defaultCopy}</p>}

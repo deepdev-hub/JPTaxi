@@ -98,7 +98,7 @@ export function getActiveRideRedirect(role, activeRide, pathname) {
   if (activeRide?.type !== 'trip') return null;
 
   if (role === 'customer') {
-    const allowedPaths = ['/home', '/ride-status', '/messages', '/user-info'];
+    const allowedPaths = ['/home', '/ride-confirm', '/ride-status', '/messages', '/user-info'];
     if (hasOutstandingPayment(activeRide)) {
       allowedPaths.push('/payment');
     }

@@ -11,8 +11,11 @@ import PageShell from '../components/PageShell.jsx';
 import { getLastInvoiceTripId, setLastInvoiceTripId } from '../utils/invoiceSession.js';
 import '../styles/app-pages.css';
 import { getAuthRole } from '../utils/session.js';
+import { useI18n } from '../i18n/I18nProvider.jsx';
+import { translateApiError } from '../i18n/errors.js';
 
 export default function InvoicePage() {
+  const { t } = useI18n();
   const [searchParams] = useSearchParams();
   const role = getAuthRole();
   const tripId =
@@ -28,7 +31,7 @@ export default function InvoicePage() {
   useEffect(() => {
     let ignored = false;
     if (!tripId) {
-      setStatus('No completed trip was selected.');
+      setStatus(t('invoice.none'));
       return undefined;
     }
     setLastInvoiceTripId(tripId);
@@ -43,7 +46,7 @@ export default function InvoicePage() {
         }
       })
       .catch((error) => {
-        if (!ignored) setStatus(error.message || 'Unable to load the invoice.');
+        if (!ignored) setStatus(translateApiError(error, t, t('invoice.loadFailed')));
       })
       .finally(() => {
         if (!ignored) setLoading(false);
@@ -51,7 +54,7 @@ export default function InvoicePage() {
     return () => {
       ignored = true;
     };
-  }, [tripId]);
+  }, [tripId, t]);
 
   async function downloadPdf() {
     setStatus('');
@@ -64,7 +67,7 @@ export default function InvoicePage() {
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (error) {
-      setStatus(error.message || 'Unable to download the PDF.');
+      setStatus(translateApiError(error, t, t('invoice.downloadFailed')));
     }
   }
 
@@ -74,9 +77,9 @@ export default function InvoicePage() {
       const result = await emailTripInvoice(tripId, {
         recipientEmail: email || undefined,
       });
-      setStatus(result.message || 'Invoice email sent.');
+      setStatus(t('invoice.emailSent'));
     } catch (error) {
-      setStatus(error.message || 'Unable to send the invoice.');
+      setStatus(translateApiError(error, t, t('invoice.emailFailed')));
     }
   }
 
@@ -86,13 +89,13 @@ export default function InvoicePage() {
     <PageShell withFooter={false}>
       <main className="invoice-screen">
         <section className="zip-invoice-container">
-          {loading ? <p className="invoice-loading" role="status">Loading invoice...</p> : null}
+          {loading ? <p className="invoice-loading" role="status">{t('invoice.loading')}</p> : null}
           {!loading && invoice ? <InvoiceTemplate invoice={invoice} /> : null}
           {!loading && !invoice ? <p className="empty-state">{status}</p> : null}
           {invoice ? (
             <>
               <label className="payment-field">
-                Recipient email
+                {t('invoice.recipient')}
                 <input
                   onChange={(event) => setEmail(event.target.value)}
                   type="email"
@@ -100,14 +103,14 @@ export default function InvoicePage() {
                 />
               </label>
               <div className="invoice-actions">
-                <button onClick={downloadPdf} type="button">Download PDF</button>
-                <button onClick={sendEmail} type="button">Send email</button>
+                <button onClick={downloadPdf} type="button">{t('invoice.download')}</button>
+                <button onClick={sendEmail} type="button">{t('invoice.sendEmail')}</button>
               </div>
             </>
           ) : null}
           {status && invoice ? <p className="payment-status-text" role="status">{status}</p> : null}
           <Link className="invoice-close" to={closePath}>
-            {role === 'driver' ? 'Close' : 'Rate driver'}
+            {role === 'driver' ? t('common.close') : t('invoice.rateDriver')}
           </Link>
         </section>
       </main>

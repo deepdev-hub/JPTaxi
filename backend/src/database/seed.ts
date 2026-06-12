@@ -1,8 +1,9 @@
 import * as bcrypt from 'bcryptjs';
 import dataSource from './data-source';
 
-async function seed(): Promise<void> {
+export async function seedDatabase(): Promise<void> {
   await dataSource.initialize();
+  await dataSource.runMigrations();
   const runner = dataSource.createQueryRunner();
   await runner.connect();
   await runner.startTransaction();
@@ -14,7 +15,7 @@ async function seed(): Promise<void> {
         driver_payout, payment_transaction, trip, ride_request_dispatch,
         ride_request, pricing_rule, customer_payment_method,
         customer_notification_preference, customer_saved_place,
-        driver_bank_account, driver_license, vehicle, user_link, driver,
+        driver_insurance, driver_bank_account, driver_license, vehicle, user_link, driver,
         customer, admin RESTART IDENTITY CASCADE
     `);
 
@@ -45,7 +46,9 @@ async function seed(): Promise<void> {
         ('Pham', 'Yuki', 'Female', '1992-07-08', '0912000002', 'driver2@jptaxi.local', $1,
          'Vietnam', 'DRV-0002', TRUE, TRUE, 'approved', 1, NOW(), 'N1', TRUE, NOW()),
         ('Do', 'Ken', 'Male', '1994-11-03', '0912000003', 'driver.pending@jptaxi.local', $1,
-         'Vietnam', 'DRV-0003', TRUE, TRUE, 'pending', NULL, NULL, 'N3', FALSE, NOW())`,
+         'Vietnam', 'DRV-0003', TRUE, TRUE, 'pending', NULL, NULL, 'N3', FALSE, NOW()),
+        ('Local', 'FiveKm', 'Other', '1993-06-12', '0912000004', 'driver@gmail.com', $1,
+         'Vietnam', 'DRV-0004', TRUE, TRUE, 'pending', NULL, NULL, 'N3', FALSE, NULL)`,
       [userHash],
     );
 
@@ -55,14 +58,16 @@ async function seed(): Promise<void> {
       VALUES
         (1, '4', '30A-100.01', 'Toyota Vios', 'Black', 2023),
         (2, '7', '30A-100.02', 'Toyota Innova', 'White', 2022),
-        (3, '4', '30A-100.03', 'Honda City', 'Silver', 2024);
+        (3, '4', '30A-100.03', 'Honda City', 'Silver', 2024),
+        (4, '4', '12H-272.67', 'Toyota Vios', 'Blue', 2023);
 
       INSERT INTO driver_license
         (driver_id, license_type, issue_date, issue_place, expiry_date)
       VALUES
         (1, 'B', '2020-01-10', 'Hanoi', '2030-01-10'),
         (2, 'B', '2019-05-20', 'Hanoi', '2029-05-20'),
-        (3, 'B', '2022-03-15', 'Hanoi', '2032-03-15');
+        (3, 'B', '2022-03-15', 'Hanoi', '2032-03-15'),
+        (4, 'B', '2021-06-12', 'Hanoi', '2031-06-12');
 
       INSERT INTO driver_bank_account
         (driver_id, bank_name, account_number, account_holder)
@@ -95,6 +100,12 @@ async function seed(): Promise<void> {
         (1, 'VISA', 'NGUYEN AN', '4821', 12, 2029, 'Hoan Kiem, Hanoi',
          'local_pm_customer_1', TRUE);
 
+      INSERT INTO login_history
+        (user_type, user_id, ip_address, user_agent, login_time)
+      VALUES
+        ('customer', 1, '127.0.0.1', 'JP Taxi Seed Browser', NOW() - INTERVAL '1 day'),
+        ('customer', 1, '127.0.0.1', 'JP Taxi Seed Browser', NOW() - INTERVAL '2 hour');
+
       INSERT INTO pricing_rule
         (start_km, end_km, price_per_km_vnd, is_base_fare, effective_from, priority)
       VALUES
@@ -105,25 +116,26 @@ async function seed(): Promise<void> {
       INSERT INTO driver_location_history (driver_id, latitude, longitude, recorded_at)
       VALUES
         (1, 21.028800, 105.851700, NOW()),
-        (2, 21.058500, 105.819000, NOW());
+        (2, 21.058500, 105.819000, NOW()),
+        (4, 21.073400, 105.852000, NOW());
 
       INSERT INTO ride_request
         (customer_id, pickup_address, pickup_lat, pickup_lng, dropoff_address,
          dropoff_lat, dropoff_lng, vehicle_type, request_time, status,
-         estimated_fare_vnd, estimated_fare_jpy, raw_fare_vnd)
+         estimated_fare_vnd, estimated_fare_jpy, raw_fare_vnd,
+         estimated_distance_meters, estimated_duration_seconds)
       VALUES
         (1, 'Hoan Kiem Lake, Hanoi', 21.028511, 105.852000,
          'Keangnam Landmark 72, Hanoi', 21.016700, 105.784700, '4',
-         NOW() - INTERVAL '2 day', 'completed', 98000, 588, 90000),
+         NOW() - INTERVAL '2 day', 'completed', 98000, 588, 90000, 8200, 1500),
         (2, 'West Lake, Hanoi', 21.058900, 105.819500,
          'Noi Bai International Airport', 21.218700, 105.804200, '7',
-         NOW(), 'pending', 320000, 1920, 300000);
+         NOW(), 'searching', 320000, 1920, 300000, 21800, 2940);
 
       INSERT INTO ride_request_dispatch
         (request_id, driver_id, attempt_number, status, responded_at)
       VALUES
-        (1, 1, 1, 'accepted', NOW() - INTERVAL '2 day'),
-        (2, 2, 1, 'pending', NULL);
+        (1, 1, 1, 'accepted', NOW() - INTERVAL '2 day');
 
       INSERT INTO trip
         (request_id, driver_id, start_time, end_time, actual_distance_km,
@@ -237,7 +249,9 @@ async function seed(): Promise<void> {
   }
 }
 
-seed().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  seedDatabase().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

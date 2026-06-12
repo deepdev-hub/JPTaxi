@@ -3,20 +3,29 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { getReviewContext, submitTripRating } from '../api/ratings.js';
 import PageShell from '../components/PageShell.jsx';
 import { getLastInvoiceTripId } from '../utils/invoiceSession.js';
+import { useI18n } from '../i18n/I18nProvider.jsx';
+import { translateApiError } from '../i18n/errors.js';
 import '../styles/app-pages.css';
 
-const tags = ['丁寧な対応', '安全運転', '車内が清潔', 'ルートが最適', '日本語が上手'];
+const tags = [
+  { code: 'polite', labelKey: 'review.tag.polite' },
+  { code: 'safe_driving', labelKey: 'review.tag.safe' },
+  { code: 'clean_vehicle', labelKey: 'review.tag.clean' },
+  { code: 'optimal_route', labelKey: 'review.tag.route' },
+  { code: 'good_communication', labelKey: 'review.tag.language' },
+];
 
-function scoreLabel(score) {
-  if (score === 0) return '未評価';
-  if (score < 2) return '改善が必要';
-  if (score < 3.5) return '普通';
-  if (score < 4.5) return 'とても良い';
-  return '素晴らしい!';
+function scoreLabel(score, t) {
+  if (score === 0) return t('review.notRated');
+  if (score < 2) return t('review.needsImprovement');
+  if (score < 3.5) return t('review.average');
+  if (score < 4.5) return t('review.veryGood');
+  return t('review.excellent');
 }
 
 export default function DriverReviewPage() {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [searchParams] = useSearchParams();
   const tripId = searchParams.get('tripId') || sessionStorage.getItem('jpTaxiTripId') || getLastInvoiceTripId() || null;
   const [score, setScore] = useState(0);
@@ -27,7 +36,7 @@ export default function DriverReviewPage() {
   const [status, setStatus] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const displayScore = hoverScore ?? score;
-  const label = scoreLabel(displayScore);
+  const label = scoreLabel(displayScore, t);
   const displayScoreText = displayScore.toFixed(1);
   const driverName = reviewContext?.driver?.name || '';
   const vehicle = reviewContext?.driver?.vehicle;
@@ -39,7 +48,7 @@ export default function DriverReviewPage() {
   useEffect(() => {
     const numericTripId = Number(tripId);
     if (!Number.isFinite(numericTripId) || numericTripId <= 0) {
-      setStatus('No completed trip was selected.');
+      setStatus(t('review.noTrip'));
       return undefined;
     }
 
@@ -55,12 +64,12 @@ export default function DriverReviewPage() {
         }
       })
       .catch((error) => {
-        if (!ignored) setStatus(error.message || '評価情報を取得できませんでした。');
+        if (!ignored) setStatus(translateApiError(error, t, t('review.loadFailed')));
       });
     return () => {
       ignored = true;
     };
-  }, [tripId]);
+  }, [t, tripId]);
 
   function toggleTag(tag) {
     setSelectedTags((current) => current.includes(tag)
@@ -71,13 +80,13 @@ export default function DriverReviewPage() {
   async function submitReview(event) {
     event.preventDefault();
     if (score < 0.5) {
-      setStatus('星を0.5以上選択してください。');
+      setStatus(t('review.scoreRequired'));
       return;
     }
 
     const numericTripId = Number(tripId);
     if (!Number.isFinite(numericTripId) || numericTripId <= 0) {
-      setStatus('No completed trip was selected.');
+      setStatus(t('review.noTrip'));
       return;
     }
 
@@ -90,7 +99,7 @@ export default function DriverReviewPage() {
         { update: Boolean(reviewContext?.existingRating) },
       );
     } catch (error) {
-      setStatus(error.message || '評価を送信できませんでした。');
+      setStatus(translateApiError(error, t, t('review.submitFailed')));
       setIsSubmitting(false);
       return;
     }
@@ -103,8 +112,8 @@ export default function DriverReviewPage() {
         <section className="rating-window">
           <header className="review-topbar">
             <Link to="/home">×</Link>
-            <strong>フィードバック</strong>
-            <button type="submit" form="driver-review-form" disabled={isSubmitting}>送信</button>
+            <strong>{t('review.feedback')}</strong>
+            <button type="submit" form="driver-review-form" disabled={isSubmitting}>{t('common.send')}</button>
           </header>
 
           <form id="driver-review-form" className="review-content" onSubmit={submitReview}>
@@ -113,7 +122,7 @@ export default function DriverReviewPage() {
             <p>{vehicleLabel}</p>
 
             <section className="review-rating">
-              <strong>今回の乗車はいかがでしたか?</strong>
+              <strong>{t('review.question')}</strong>
               <div className="review-stars half-stars" aria-label={`${displayScore} stars`} onMouseLeave={() => setHoverScore(null)}>
                 {[1, 2, 3, 4, 5].map((star) => {
                   const fill = Math.max(0, Math.min(1, displayScore - (star - 1))) * 100;
@@ -126,7 +135,7 @@ export default function DriverReviewPage() {
                       <span aria-hidden="true">★</span>
                       {[star - 0.5, star].map((value, index) => (
                         <button
-                          aria-label={`${value.toFixed(1)}星`}
+                          aria-label={`${value.toFixed(1)} stars`}
                           className={`star-hit ${index === 0 ? 'left' : 'right'}`}
                           key={value}
                           onBlur={() => setHoverScore(null)}
@@ -139,23 +148,23 @@ export default function DriverReviewPage() {
                     </span>
                   );
                 })}
-                <button className="clear-rating" type="button" aria-label="評価を0に戻す" title="クリックして0に戻す" onClick={() => { setScore(0); setHoverScore(null); }}>{displayScoreText}</button>
+                <button className="clear-rating" type="button" aria-label={t('review.clear')} title={t('review.clear')} onClick={() => { setScore(0); setHoverScore(null); }}>{displayScoreText}</button>
               </div>
               <span className="review-rating-label">{label} ({displayScoreText})</span>
               {status ? <small className="review-status">{status}</small> : null}
             </section>
 
             <section className="review-tags">
-              <strong>良かった点 (複数選択可)</strong>
+              <strong>{t('review.goodPoints')}</strong>
               <div>
                 {tags.map((tag) => (
-                  <button className={selectedTags.includes(tag) ? 'selected' : ''} type="button" key={tag} onClick={() => toggleTag(tag)}>{tag}</button>
+                  <button className={selectedTags.includes(tag.code) ? 'selected' : ''} type="button" key={tag.code} onClick={() => toggleTag(tag.code)}>{t(tag.labelKey)}</button>
                 ))}
               </div>
             </section>
 
-            <textarea className="review-comment" placeholder="ドライバーへのメッセージ (任意)" value={comment} onChange={(event) => setComment(event.target.value)} />
-            <button className="review-submit" type="submit" disabled={isSubmitting}>{isSubmitting ? '送信中...' : '評価を送信する'}</button>
+            <textarea className="review-comment" placeholder={t('review.comment')} value={comment} onChange={(event) => setComment(event.target.value)} />
+            <button className="review-submit" type="submit" disabled={isSubmitting}>{isSubmitting ? t('common.sending') : t('review.submit')}</button>
           </form>
         </section>
       </main>

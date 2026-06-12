@@ -18,4 +18,13 @@ export default new DataSource({
   entities: [join(__dirname, '..', 'entities', '*.entity.{ts,js}')],
   migrations: [join(__dirname, 'migrations', '*.{ts,js}')],
   synchronize: false,
+  extra: {
+    max: Number(process.env.DB_POOL_MAX ?? 3),
+    min: Number(process.env.DB_POOL_MIN ?? 1),
+    connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS ?? 30_000),
+    idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS ?? 600_000),
+    maxLifetimeSeconds: Math.ceil(
+      Number(process.env.DB_MAX_LIFETIME_MS ?? 1_800_000) / 1000,
+    ),
+  },
 });

@@ -1,4 +1,10 @@
-import { apiRequest } from './client.js';
+import { apiRequest, API_BASE } from './client.js';
+
+const SOCKET_ORIGIN = API_BASE.replace(/\/api\/?$/, '');
+
+export function getRideSocketUrl() {
+  return SOCKET_ORIGIN;
+}
 
 export function estimateRide(payload) {
   return apiRequest('/rides/estimate', {

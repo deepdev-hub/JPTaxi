@@ -7,10 +7,14 @@ export class MailService {
   constructor(private readonly config: ConfigService) {}
 
   async sendPasswordReset(to: string, code: string): Promise<void> {
+    const expirationMinutes = this.config.get<number>(
+      'PASSWORD_RESET_EXPIRATION_MINUTES',
+      30,
+    );
     await this.send({
       to,
       subject: 'JP Taxi password reset',
-      text: `Your JP Taxi reset code is ${code}. It expires in 15 minutes.`,
+      text: `Your JP Taxi reset code is ${code}. It expires in ${expirationMinutes} minutes.`,
     });
   }
 
@@ -33,10 +37,16 @@ export class MailService {
     text: string;
     attachments?: nodemailer.SendMailOptions['attachments'];
   }): Promise<void> {
-    if (this.config.get<string>('MAIL_MODE') !== 'smtp') {
+    const mode = this.config.get<string>('MAIL_MODE', 'console');
+    if (mode === 'console') {
       console.log(`[MAIL console] To: ${message.to}`);
       console.log(`[MAIL console] Subject: ${message.subject}`);
       console.log(`[MAIL console] ${message.text}`);
+      return;
+    }
+
+    if (mode === 'resend') {
+      await this.sendWithResend(message);
       return;
     }
 
@@ -54,5 +64,61 @@ export class MailService {
       from: this.config.get<string>('SMTP_FROM', 'JP Taxi <no-reply@jptaxi.local>'),
       ...message,
     });
+  }
+
+  private async sendWithResend(message: {
+    to: string;
+    subject: string;
+    text: string;
+    attachments?: nodemailer.SendMailOptions['attachments'];
+  }): Promise<void> {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      this.config.get<number>('RESEND_READ_TIMEOUT_MS', 15_000),
+    );
+    try {
+      const attachments = message.attachments?.map((attachment) => {
+        if (!('filename' in attachment) || !('content' in attachment)) {
+          throw new Error('Resend attachments require filename and content');
+        }
+        const content = Buffer.isBuffer(attachment.content)
+          ? attachment.content
+          : Buffer.from(String(attachment.content));
+        return {
+          filename: String(attachment.filename),
+          content: content.toString('base64'),
+        };
+      });
+      const response = await fetch(
+        this.config.get<string>(
+          'RESEND_API_URL',
+          'https://api.resend.com/emails',
+        ),
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.config.getOrThrow<string>('RESEND_API_KEY')}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: this.config.getOrThrow<string>('MAIL_FROM'),
+            to: [message.to],
+            subject: message.subject,
+            text: message.text,
+            ...(attachments?.length ? { attachments } : {}),
+          }),
+          signal: controller.signal,
+        },
+      );
+      if (!response.ok) {
+        const responseBody = await response.text();
+        throw new Error(
+          `Resend returned ${response.status}: ${responseBody || response.statusText}`,
+        );
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 }

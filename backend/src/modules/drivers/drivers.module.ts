@@ -8,6 +8,8 @@ import { Trip } from '../../entities/trip.entity';
 import { DriversController } from './drivers.controller';
 import { DriversService } from './drivers.service';
 import { DriverPayout } from '../../entities/driver-payout.entity';
+import { DriverLocationHistory } from '../../entities/driver-location-history.entity';
+import { DriverInsurance } from '../../entities/driver-insurance.entity';
 
 @Module({
   imports: [
@@ -18,6 +20,8 @@ import { DriverPayout } from '../../entities/driver-payout.entity';
       DriverBankAccount,
       Trip,
       DriverPayout,
+      DriverLocationHistory,
+      DriverInsurance,
     ]),
   ],
   controllers: [DriversController],

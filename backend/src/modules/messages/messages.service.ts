@@ -3,10 +3,9 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Conversation } from '../../entities/conversation.entity';
 import { Customer } from '../../entities/customer.entity';
 import { Driver } from '../../entities/driver.entity';
@@ -20,9 +19,8 @@ import { MessagesGateway } from './messages.gateway';
 type AuthUser = { id: number; role: string };
 
 @Injectable()
-export class MessagesService implements OnModuleInit {
+export class MessagesService {
   constructor(
-    private readonly dataSource: DataSource,
     @InjectRepository(Conversation)
     private readonly conversations: Repository<Conversation>,
     @InjectRepository(Message)
@@ -37,75 +35,6 @@ export class MessagesService implements OnModuleInit {
     private readonly trips: Repository<Trip>,
     private readonly messagesGateway: MessagesGateway,
   ) {}
-
-  async onModuleInit() {
-    await this.ensureMessagingSchema();
-  }
-
-  private async ensureMessagingSchema() {
-    await this.dataSource.query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_type WHERE typname = 'message_sender_type'
-        ) THEN
-          CREATE TYPE message_sender_type AS ENUM ('customer', 'driver');
-        END IF;
-      END $$;
-    `);
-
-    await this.dataSource.query(`
-      CREATE TABLE IF NOT EXISTS conversation (
-        conversation_id SERIAL PRIMARY KEY,
-        customer_id INT NOT NULL,
-        driver_id INT NOT NULL,
-        request_id INT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMPTZ NULL,
-        FOREIGN KEY (customer_id) REFERENCES customer(customer_id) ON DELETE CASCADE,
-        FOREIGN KEY (driver_id) REFERENCES driver(driver_id) ON DELETE CASCADE,
-        FOREIGN KEY (request_id) REFERENCES ride_request(request_id) ON DELETE SET NULL,
-        UNIQUE (customer_id, driver_id)
-      );
-    `);
-    await this.dataSource.query(`
-      ALTER TABLE conversation
-        ADD COLUMN IF NOT EXISTS request_id INT NULL,
-        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NULL;
-    `);
-
-    await this.dataSource.query(`
-      CREATE TABLE IF NOT EXISTS message (
-        message_id SERIAL PRIMARY KEY,
-        conversation_id INT NOT NULL,
-        sender_type message_sender_type NOT NULL,
-        sender_id INT NOT NULL,
-        body TEXT NOT NULL,
-        sent_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        read_at TIMESTAMPTZ NULL,
-        FOREIGN KEY (conversation_id) REFERENCES conversation(conversation_id) ON DELETE CASCADE
-      );
-    `);
-    await this.dataSource.query(`
-      ALTER TABLE message
-        ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ NULL;
-    `);
-
-    await this.dataSource.query(`
-      CREATE INDEX IF NOT EXISTS idx_message_conversation_sent
-        ON message(conversation_id, sent_at DESC);
-    `);
-    await this.dataSource.query(`
-      CREATE INDEX IF NOT EXISTS idx_conversation_customer
-        ON conversation(customer_id, updated_at DESC);
-    `);
-    await this.dataSource.query(`
-      CREATE INDEX IF NOT EXISTS idx_conversation_driver
-        ON conversation(driver_id, updated_at DESC);
-    `);
-  }
 
   async listConversations(user: AuthUser) {
     const qb = this.conversations

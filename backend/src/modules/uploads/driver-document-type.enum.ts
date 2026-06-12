@@ -4,6 +4,7 @@ export enum DriverDocumentType {
   license_back = 'license_back',
   vehicle_photo = 'vehicle_photo',
   registration_paper = 'registration_paper',
+  insurance = 'insurance',
 }
 
 export const DRIVER_DOCUMENT_SUBDIR: Record<DriverDocumentType, string> = {
@@ -12,4 +13,5 @@ export const DRIVER_DOCUMENT_SUBDIR: Record<DriverDocumentType, string> = {
   [DriverDocumentType.license_back]: 'drivers/licenses',
   [DriverDocumentType.vehicle_photo]: 'drivers/vehicles',
   [DriverDocumentType.registration_paper]: 'drivers/vehicles',
+  [DriverDocumentType.insurance]: 'drivers/insurance',
 };

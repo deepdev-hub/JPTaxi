@@ -71,7 +71,7 @@ export async function uploadAvatar(file) {
     method: 'POST',
     body: formData,
   });
-  return result?.url ? resolveAssetUrl(result.url) : null;
+  return result?.url || null;
 }
 
 export async function uploadDriverDocument(documentType, file) {

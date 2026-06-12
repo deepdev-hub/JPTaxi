@@ -9,51 +9,41 @@ import Topbar from '../components/Topbar.jsx';
 import '../styles/app-pages.css';
 import { buildSelectedRoute, geocodePlace, getCurrentPosition } from '../utils/routePlanner.js';
 import { getRideContinuationPath, syncActiveRideSession } from '../utils/activeRideNavigation.js';
+import { useI18n } from '../i18n/I18nProvider.jsx';
 
 const userHome = {
   brandTo: '/home',
-  actions: (
-    <>
-      <Link to="/home">ホーム</Link>
-      <Link to="/user-info">アカウント</Link>
-    </>
-  ),
-  heading: 'こんにちは！',
-  question: 'どこへ行きますか?',
+  heading: 'home.greeting',
+  question: 'home.customerQuestion',
   searchTo: '/location-search',
-  searchTitle: 'どこへ行きますか？',
-  searchCopy: '目的地・住所を入力、または履歴から選択',
+  searchTitle: 'home.customerSearchTitle',
+  searchCopy: 'home.customerSearchCopy',
   quickItems: [],
-  fastTo: '/location-search',
-  fastTitle: '今すぐタクシーを呼ぶ',
-  fastCopy: 'すぐに予約',
+  fastTo: '/bill-confirm',
+  fastTitle: 'home.callTaxi',
+  fastCopy: 'home.bookNow',
 };
 
 const driverHome = {
   brandTo: '/driver-home',
-  actions: (
-    <>
-      <Link to="/driver-home">ホーム</Link>
-      <Link to="/driver-info/basic">ドライバー情報</Link>
-    </>
-  ),
-  heading: 'こんにちは！',
-  question: '次の配車を確認しますか?',
+  heading: 'home.greeting',
+  question: 'home.driverQuestion',
   searchTo: '/xacnhancuocxe',
-  searchTitle: '予約内容を確認',
-  searchCopy: '乗車場所・目的地・料金を確認して受付へ進む',
+  searchTitle: 'home.driverSearchTitle',
+  searchCopy: 'home.driverSearchCopy',
   quickItems: [
-    { icon: '👤', title: 'プロフィール', copy: '公開情報を編集', to: '/driver-info/basic' },
-    { icon: '💬', title: 'チャット', copy: '利用者へ連絡', to: '/messages/customer' },
-    { icon: '📍', title: '待機状況', copy: '時間と距離を表示', to: '/driver-ride-status' },
+    { icon: '👤', title: 'home.profile', copy: 'home.profileCopy', to: '/driver-info/basic' },
+    { icon: '💬', title: 'home.chat', copy: 'home.chatCopy', to: '/messages/customer' },
+    { icon: '📍', title: 'home.rideStatus', copy: 'home.rideStatusCopy', to: '/driver-ride-status' },
   ],
   fastTo: '/xacnhancuocxe',
-  fastTitle: '配車確認へ進む',
-  fastCopy: '確認後、チャット・待機状況・請求書へ',
+  fastTitle: 'home.openDispatch',
+  fastCopy: 'home.openDispatchCopy',
 };
 
 export default function HomeExperience({ mode = 'user' }) {
   const navigate = useNavigate();
+  const { locale, t } = useI18n();
   const content = mode === 'driver' ? driverHome : userHome;
   const isUserMode = mode !== 'driver';
   const [savedPlaces, setSavedPlaces] = useState([]);
@@ -141,11 +131,15 @@ export default function HomeExperience({ mode = 'user' }) {
         getCurrentPosition(),
         geocodePlace(item.address),
       ]);
-      const selectedRoute = await buildSelectedRoute({
-        ...destination,
-        name: item.title,
-        address: destination.address || item.address,
-      }, pickup);
+      const selectedRoute = await buildSelectedRoute(
+        {
+          ...destination,
+          name: item.title,
+          address: destination.address || item.address,
+        },
+        pickup,
+        { locale, pickupName: t('location.current') },
+      );
 
       window.sessionStorage.setItem('jpTaxiSelectedRoute', JSON.stringify(selectedRoute));
       navigate('/bill-confirm');
@@ -163,8 +157,8 @@ export default function HomeExperience({ mode = 'user' }) {
           brandTo={content.brandTo}
           actions={(
             <>
-              <Link to={content.brandTo}>Home</Link>
-              <Link to={isUserMode ? '/user-info/profile' : '/driver-info/basic'}>Account</Link>
+              <Link to={content.brandTo}>{t('common.home')}</Link>
+              <Link to={isUserMode ? '/user-info/profile' : '/driver-info/basic'}>{t('common.account')}</Link>
               {profile?.avatarUrl
                 ? <img className="topbar-avatar" src={resolveAssetUrl(profile.avatarUrl)} alt="" />
                 : <span className="topbar-avatar" />}
@@ -189,14 +183,14 @@ export default function HomeExperience({ mode = 'user' }) {
           />
 
           <div className="zip-home-panel">
-            <h1>{content.heading}</h1>
-            <p className="zip-home-question">{content.question}</p>
+            <h1>{t(content.heading)}</h1>
+            <p className="zip-home-question">{t(content.question)}</p>
 
             <Link className="zip-search-card" to={rideContinuationPath || content.searchTo} onClick={(event) => openRideAwarePath(event, content.searchTo)}>
               <span className="zip-search-icon" aria-hidden="true">📍</span>
               <span>
-                <strong>{content.searchTitle}</strong>
-                <small>{content.searchCopy}</small>
+                <strong>{t(content.searchTitle)}</strong>
+                <small>{t(content.searchCopy)}</small>
               </span>
             </Link>
 
@@ -204,7 +198,7 @@ export default function HomeExperience({ mode = 'user' }) {
               {isUserMode && !quickItems.length ? (
                 <Link className="zip-quick-box" to="/user-info/profile">
                   <span>+</span>
-                  <div><strong>Saved places</strong><small>No saved places yet</small></div>
+                  <div><strong>{t('home.savedPlaces')}</strong><small>{t('home.noSavedPlaces')}</small></div>
                 </Link>
               ) : null}
               {quickItems.map((item) => {
@@ -212,8 +206,8 @@ export default function HomeExperience({ mode = 'user' }) {
                   <>
                     <span>{item.icon}</span>
                     <div>
-                      <strong>{quickLoading === item.key ? '検索中...' : item.title}</strong>
-                      <small>{item.address || item.copy || 'プロフィールで住所を設定'}</small>
+                      <strong>{quickLoading === item.key ? t('home.searching') : (isUserMode ? item.title : t(item.title))}</strong>
+                      <small>{item.address || (item.copy ? t(item.copy) : t('home.setAddress'))}</small>
                     </div>
                   </>
                 );
@@ -240,7 +234,7 @@ export default function HomeExperience({ mode = 'user' }) {
 
             <Link className="zip-fast-button" to={rideContinuationPath || content.fastTo} onClick={(event) => openRideAwarePath(event, content.fastTo)}>
               <span aria-hidden="true">🚖</span>
-              <span><strong>{content.fastTitle}</strong><small>{content.fastCopy}</small></span>
+              <span><strong>{t(content.fastTitle)}</strong><small>{t(content.fastCopy)}</small></span>
             </Link>
           </div>
 

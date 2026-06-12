@@ -7,7 +7,6 @@ import {
   ParseIntPipe,
   Post,
   Put,
-  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -15,22 +14,17 @@ import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
 import type { JwtValidatedUser } from '../auth/jwt.strategy';
 import { ApplyDriverDto } from './dto/apply-driver.dto';
-import { SearchDriversQueryDto } from './dto/search-drivers.query.dto';
 import { UpdateBankAccountDto } from './dto/update-bank-account.dto';
 import { UpdateDriverDocumentsDto } from './dto/update-driver-documents.dto';
 import { UpdateDriverProfileDto } from './dto/update-driver-profile.dto';
 import { DriversService } from './drivers.service';
+import { UpdateDriverInsuranceDto } from './dto/update-driver-insurance.dto';
 
 type AuthedRequest = Request & { user: JwtValidatedUser };
 
 @Controller('drivers')
 export class DriversController {
   constructor(private readonly drivers: DriversService) {}
-
-  @Get('search')
-  searchDrivers(@Query() query: SearchDriversQueryDto) {
-    return this.drivers.searchDrivers(query);
-  }
 
   @Get('me/profile')
   @UseGuards(AuthGuard('jwt'))
@@ -72,6 +66,23 @@ export class DriversController {
   getPayouts(@Req() req: AuthedRequest) {
     this.assertDriver(req.user);
     return this.drivers.getPayouts(req.user.id);
+  }
+
+  @Get('me/insurance')
+  @UseGuards(AuthGuard('jwt'))
+  getInsurance(@Req() req: AuthedRequest) {
+    this.assertDriver(req.user);
+    return this.drivers.getInsurance(req.user.id);
+  }
+
+  @Put('me/insurance')
+  @UseGuards(AuthGuard('jwt'))
+  updateInsurance(
+    @Req() req: AuthedRequest,
+    @Body() dto: UpdateDriverInsuranceDto,
+  ) {
+    this.assertDriver(req.user);
+    return this.drivers.updateInsurance(req.user.id, dto);
   }
 
   @Post('me/apply')

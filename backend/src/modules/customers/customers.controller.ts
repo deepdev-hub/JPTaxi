@@ -43,6 +43,11 @@ export class CustomersController {
     return this.customers.updateProfile(req.user.id, dto);
   }
 
+  @Get('me/login-history')
+  getLoginHistory(@Req() req: Request & { user: JwtValidatedUser }) {
+    return this.customers.getLoginHistory(req.user.id);
+  }
+
   @Get('me/saved-places')
   getSavedPlaces(@Req() req: Request & { user: JwtValidatedUser }) {
     return this.customers.getSavedPlaces(req.user.id);
