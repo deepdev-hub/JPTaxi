@@ -65,6 +65,7 @@ describe('validateEnvironment', () => {
       DISPATCH_EXPANSION_INTERVAL_MS: 2_000,
       DISPATCH_OFFER_TIMEOUT_MS: 30_000,
       DISPATCH_LOCATION_MAX_AGE_MINUTES: 30,
+      DISPATCH_SEARCH_STALE_MINUTES: 2,
     });
   });
 });

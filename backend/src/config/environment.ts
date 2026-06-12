@@ -259,5 +259,11 @@ export function validateEnvironment(config: Environment): Environment {
       30,
       1,
     ),
+    DISPATCH_SEARCH_STALE_MINUTES: integerValue(
+      config,
+      'DISPATCH_SEARCH_STALE_MINUTES',
+      2,
+      1,
+    ),
   };
 }
