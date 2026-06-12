@@ -428,7 +428,7 @@ describeWithDatabase('main business flows (e2e)', () => {
       .post('/api/auth/login')
       .send({
         role: 'customer',
-        email: 'customer@jptaxi.local',
+        email: 'customer2@jptaxi.local',
         password: 'password123',
       })
       .expect(201);
@@ -619,5 +619,77 @@ describeWithDatabase('main business flows (e2e)', () => {
       driver_id: 4,
       radius_km: 5,
     }]);
+  });
+
+  it('fails a stale searching request so the customer can create a new booking', async () => {
+    const uniqueSuffix = Date.now();
+    await request(app.getHttpServer())
+      .post('/api/auth/register')
+      .send({
+        role: 'customer',
+        first_name: 'Stale',
+        last_name: 'Case',
+        email: `customer.stale.${uniqueSuffix}@jptaxi.local`,
+        phone: `0901${String(uniqueSuffix).slice(-6)}`,
+        gender: 'Other',
+        birth_date: '1990-01-01',
+        password: 'password123',
+      })
+      .expect(201);
+
+    const customerLogin = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({
+        role: 'customer',
+        email: `customer.stale.${uniqueSuffix}@jptaxi.local`,
+        password: 'password123',
+      })
+      .expect(201);
+    const customerAuth = {
+      Authorization: `Bearer ${customerLogin.body.token}`,
+    };
+
+    const staleRequest = await request(app.getHttpServer())
+      .post('/api/rides')
+      .set(customerAuth)
+      .send({
+        pickupAddress: 'Hoan Kiem Lake, Hanoi',
+        pickupLat: 21.028511,
+        pickupLng: 105.852,
+        dropoffAddress: 'Keangnam Landmark 72, Hanoi',
+        dropoffLat: 21.0167,
+        dropoffLng: 105.7847,
+        vehicleType: '4',
+      })
+      .expect(201);
+
+    await dataSource.query(
+      `UPDATE ride_request
+       SET search_started_at = NOW() - INTERVAL '3 minute'
+       WHERE request_id = $1`,
+      [staleRequest.body.requestId],
+    );
+
+    const replacement = await request(app.getHttpServer())
+      .post('/api/rides')
+      .set(customerAuth)
+      .send({
+        pickupAddress: 'West Lake, Hanoi',
+        pickupLat: 21.0589,
+        pickupLng: 105.8195,
+        dropoffAddress: 'Noi Bai International Airport',
+        dropoffLat: 21.2187,
+        dropoffLng: 105.8042,
+        vehicleType: '4',
+      })
+      .expect(201);
+
+    expect(replacement.body.requestId).not.toBe(staleRequest.body.requestId);
+
+    const [staleState] = await dataSource.query<Array<{ status: string }>>(
+      'SELECT status FROM ride_request WHERE request_id = $1',
+      [staleRequest.body.requestId],
+    );
+    expect(staleState.status).toBe('failed');
   });
 });

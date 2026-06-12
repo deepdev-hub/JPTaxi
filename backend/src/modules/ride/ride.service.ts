@@ -89,6 +89,10 @@ export class RideService {
     return this.config.get<number>('DISPATCH_LOCATION_MAX_AGE_MINUTES', 30);
   }
 
+  private get dispatchSearchStaleMinutes(): number {
+    return this.config.get<number>('DISPATCH_SEARCH_STALE_MINUTES', 2);
+  }
+
   async processDispatchCycle(now = new Date()): Promise<void> {
     const events = await this.dataSource.transaction(async (manager) => {
       const emitted: Array<{
@@ -182,6 +186,19 @@ export class RideService {
         .getMany();
 
       for (const request of searchingRequests) {
+        if (await this.failSearchRequestIfStale(request, now, manager)) {
+          emitted.push({
+            target: 'customer',
+            userId: request.customerId,
+            event: 'dispatchReset',
+            payload: {
+              requestId: request.requestId,
+              status: 'search_failed',
+            },
+          });
+          continue;
+        }
+
         const elapsedMs = Math.max(
           0,
           now.getTime() - new Date(request.searchStartedAt).getTime(),
@@ -417,7 +434,10 @@ export class RideService {
       order: { requestTime: 'DESC' },
     });
 
-    if (activeRequest) {
+    if (
+      activeRequest
+      && !(await this.failSearchRequestIfStale(activeRequest))
+    ) {
       throw new BadRequestException('Please cancel the active ride request before booking another ride.');
     }
 
@@ -472,7 +492,11 @@ export class RideService {
       },
     });
 
-    if (activeRequest && activeRequest.status !== RideRequestStatusType.assigned) {
+    if (
+      activeRequest
+      && activeRequest.status !== RideRequestStatusType.assigned
+      && !(await this.failSearchRequestIfStale(activeRequest))
+    ) {
       const offer = await this.dispatchRepo.findOne({
         where: {
           requestId: activeRequest.requestId,
@@ -608,6 +632,43 @@ export class RideService {
     if (Number(counts?.online ?? 0) === 0) return 'no_online_driver';
     if (Number(counts?.fresh ?? 0) === 0) return 'no_fresh_location';
     return 'no_available_driver_in_radius';
+  }
+
+  private isSearchRequestStale(request: RideRequest, now = new Date()): boolean {
+    const startedAt = new Date(request.searchStartedAt).getTime();
+    const staleAfterMs = this.dispatchSearchStaleMinutes * 60_000;
+    return now.getTime() - startedAt >= staleAfterMs;
+  }
+
+  private async failSearchRequestIfStale(
+    request: RideRequest,
+    now = new Date(),
+    manager?: DataSource['manager'],
+  ): Promise<boolean> {
+    if (
+      request.status !== RideRequestStatusType.searching
+      || !this.isSearchRequestStale(request, now)
+    ) {
+      return false;
+    }
+
+    const requests = manager?.getRepository(RideRequest) ?? this.rideRequestRepo;
+    const dispatches = manager?.getRepository(RideRequestDispatch) ?? this.dispatchRepo;
+    const activeOffer = await dispatches.findOne({
+      where: {
+        requestId: request.requestId,
+        status: DispatchStatusType.pending,
+      },
+      order: { sentAt: 'DESC' },
+    });
+
+    if (activeOffer?.expiresAt && !isDispatchOfferExpired(activeOffer.expiresAt, now)) {
+      return false;
+    }
+
+    request.status = RideRequestStatusType.failed;
+    await requests.save(request);
+    return true;
   }
 
   async getActiveRideForDriver(driverId: number): Promise<any> {
