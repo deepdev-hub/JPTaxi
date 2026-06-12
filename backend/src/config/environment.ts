@@ -2,12 +2,21 @@ export type Environment = Record<string, unknown>;
 
 const requiredVariables = ['DATABASE_URL', 'JWT_SECRET'] as const;
 
+function firstDefined(config: Environment, names: string[]): unknown {
+  return names.find((name) => config[name] != null) ? config[names.find((name) => config[name] != null)!] : undefined;
+}
+
 function requiredString(config: Environment, name: string): string {
   const value = String(config[name] ?? '').trim();
   if (!value) {
     throw new Error(`Missing required environment variable: ${name}`);
   }
   return value;
+}
+
+function stringValue(config: Environment, names: string[], fallback = ''): string {
+  const value = firstDefined(config, names);
+  return String(value ?? fallback).trim();
 }
 
 function integerValue(
@@ -31,6 +40,34 @@ function booleanValue(config: Environment, name: string, fallback = false): bool
   return value === 'true';
 }
 
+function parseSpringSizeToMb(rawValue: string, envName: string): number {
+  const normalized = rawValue.trim().toUpperCase();
+  const match = normalized.match(/^(\d+)(KB|MB|GB)$/);
+  if (!match) {
+    throw new Error(`${envName} must use a Spring size format such as 10MB`);
+  }
+  const amount = Number(match[1]);
+  const unit = match[2];
+  const factor = unit === 'KB' ? 1 / 1024 : unit === 'MB' ? 1 : 1024;
+  const value = amount * factor;
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`${envName} must resolve to at least 1MB`);
+  }
+  return value;
+}
+
+function parseSpringDurationToMs(rawValue: string, envName: string): number {
+  const normalized = rawValue.trim().toLowerCase();
+  const match = normalized.match(/^(\d+)(ms|s|m)$/);
+  if (!match) {
+    throw new Error(`${envName} must use a Spring duration format such as 10s`);
+  }
+  const amount = Number(match[1]);
+  const unit = match[2];
+  const multiplier = unit === 'ms' ? 1 : unit === 's' ? 1000 : 60_000;
+  return amount * multiplier;
+}
+
 export function validateEnvironment(config: Environment): Environment {
   for (const name of requiredVariables) {
     requiredString(config, name);
@@ -45,22 +82,37 @@ export function validateEnvironment(config: Environment): Environment {
   }
 
   const frontendUrl = String(config.FRONTEND_URL ?? 'http://localhost:5173');
-  const mailMode = String(config.MAIL_MODE ?? 'console').toLowerCase();
-  if (!['console', 'smtp', 'resend'].includes(mailMode)) {
-    throw new Error('MAIL_MODE must be console, smtp, or resend');
-  }
-  if (mailMode === 'smtp') {
-    ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'SMTP_FROM'].forEach((name) =>
-      requiredString(config, name),
-    );
-  }
-  if (mailMode === 'resend') {
-    ['RESEND_API_KEY', 'MAIL_FROM'].forEach((name) =>
-      requiredString(config, name),
-    );
-  }
+  const springUploadMaxFileSize = stringValue(
+    config,
+    ['SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE'],
+  );
+  const springUploadMaxRequestSize = stringValue(
+    config,
+    ['SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE'],
+  );
+  const uploadMaxFileSizeMb = springUploadMaxFileSize
+    ? parseSpringSizeToMb(
+        springUploadMaxFileSize,
+        'SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE',
+      )
+    : integerValue(config, 'UPLOAD_MAX_FILE_SIZE_MB', 10, 1);
+  const uploadMaxRequestSizeMb = springUploadMaxRequestSize
+    ? parseSpringSizeToMb(
+        springUploadMaxRequestSize,
+        'SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE',
+      )
+    : integerValue(config, 'UPLOAD_MAX_REQUEST_SIZE_MB', 40, 1);
 
-  const uploadMode = String(config.UPLOAD_MODE ?? 'local').toLowerCase();
+  const hasSupabaseConfig = [
+    'SUPABASE_STORAGE_ENDPOINT',
+    'SUPABASE_STORAGE_REGION',
+    'SUPABASE_STORAGE_ACCESS_KEY',
+    'SUPABASE_STORAGE_SECRET_KEY',
+    'SUPABASE_STORAGE_BUCKET',
+    'SUPABASE_STORAGE_PUBLIC_URL',
+  ].every((name) => stringValue(config, [name]).length > 0);
+  const rawUploadMode = stringValue(config, ['UPLOAD_MODE']);
+  const uploadMode = (rawUploadMode || (hasSupabaseConfig ? 'supabase_s3' : 'local')).toLowerCase();
   if (!['local', 'supabase_s3'].includes(uploadMode)) {
     throw new Error('UPLOAD_MODE must be local or supabase_s3');
   }
@@ -75,11 +127,44 @@ export function validateEnvironment(config: Environment): Environment {
     ].forEach((name) => requiredString(config, name));
   }
 
+  const hasResendConfig = stringValue(config, ['RESEND_API_KEY']).length > 0;
+  const hasSmtpConfig = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS']
+    .every((name) => stringValue(config, [name]).length > 0);
+  const rawMailMode = stringValue(config, ['MAIL_MODE']);
+  const mailMode = (rawMailMode || (hasResendConfig ? 'resend' : hasSmtpConfig ? 'smtp' : 'console')).toLowerCase();
+  if (!['console', 'smtp', 'resend'].includes(mailMode)) {
+    throw new Error('MAIL_MODE must be console, smtp, or resend');
+  }
+  if (mailMode === 'smtp') {
+    ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS'].forEach((name) =>
+      requiredString(config, name),
+    );
+  }
+  if (mailMode === 'resend') {
+    requiredString(config, 'RESEND_API_KEY');
+    if (!stringValue(config, ['APP_MAIL_FROM', 'MAIL_FROM'])) {
+      throw new Error('Missing required environment variable: APP_MAIL_FROM');
+    }
+  }
+
   const poolMax = integerValue(config, 'DB_POOL_MAX', 3, 1);
   const poolMin = integerValue(config, 'DB_POOL_MIN', 1, 0);
   if (poolMin > poolMax) {
     throw new Error('DB_POOL_MIN must be less than or equal to DB_POOL_MAX');
   }
+
+  const resendConnectTimeoutMs = stringValue(config, ['RESEND_CONNECT_TIMEOUT'])
+    ? parseSpringDurationToMs(
+        stringValue(config, ['RESEND_CONNECT_TIMEOUT']),
+        'RESEND_CONNECT_TIMEOUT',
+      )
+    : integerValue(config, 'RESEND_CONNECT_TIMEOUT_MS', 10_000, 1);
+  const resendReadTimeoutMs = stringValue(config, ['RESEND_READ_TIMEOUT'])
+    ? parseSpringDurationToMs(
+        stringValue(config, ['RESEND_READ_TIMEOUT']),
+        'RESEND_READ_TIMEOUT',
+      )
+    : integerValue(config, 'RESEND_READ_TIMEOUT_MS', 15_000, 1);
 
   return {
     ...config,
@@ -124,34 +209,15 @@ export function validateEnvironment(config: Environment): Environment {
     ),
     CORS_ALLOWED_ORIGINS: String(config.CORS_ALLOWED_ORIGINS ?? frontendUrl),
     UPLOAD_MODE: uploadMode,
-    UPLOAD_MAX_FILE_SIZE_MB: integerValue(
-      config,
-      'UPLOAD_MAX_FILE_SIZE_MB',
-      10,
-      1,
-    ),
-    UPLOAD_MAX_REQUEST_SIZE_MB: integerValue(
-      config,
-      'UPLOAD_MAX_REQUEST_SIZE_MB',
-      40,
-      1,
-    ),
+    UPLOAD_MAX_FILE_SIZE_MB: uploadMaxFileSizeMb,
+    UPLOAD_MAX_REQUEST_SIZE_MB: uploadMaxRequestSizeMb,
     MAIL_MODE: mailMode,
     RESEND_API_URL: String(
       config.RESEND_API_URL ?? 'https://api.resend.com/emails',
     ),
-    RESEND_CONNECT_TIMEOUT_MS: integerValue(
-      config,
-      'RESEND_CONNECT_TIMEOUT_MS',
-      10_000,
-      1,
-    ),
-    RESEND_READ_TIMEOUT_MS: integerValue(
-      config,
-      'RESEND_READ_TIMEOUT_MS',
-      15_000,
-      1,
-    ),
+    RESEND_CONNECT_TIMEOUT_MS: resendConnectTimeoutMs,
+    RESEND_READ_TIMEOUT_MS: resendReadTimeoutMs,
+    APP_MAIL_FROM: stringValue(config, ['APP_MAIL_FROM', 'MAIL_FROM']),
     NOMINATIM_BASE_URL: String(
       config.NOMINATIM_BASE_URL ?? 'https://nominatim.openstreetmap.org',
     ),

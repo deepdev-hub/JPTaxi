@@ -49,7 +49,11 @@ describe('RegisterPage', () => {
 
   it('shows an error notification when registration fails', async () => {
     const user = userEvent.setup();
-    registerAccount.mockRejectedValue(new Error('Email is already registered.'));
+    registerAccount.mockRejectedValue({
+      code: 'BAD_REQUEST',
+      status: 400,
+      message: 'Email is already registered.',
+    });
 
     render(
       <MemoryRouter initialEntries={['/register']}>
@@ -67,9 +71,7 @@ describe('RegisterPage', () => {
     await user.click(screen.getByRole('button', { name: 'Register' }));
 
     const notification = await screen.findByRole('alert');
-    expect(notification).toHaveTextContent(
-      'Something went wrong. Please try again.',
-    );
+    expect(notification).toHaveTextContent('Email is already registered.');
     expect(notification).toHaveClass('error');
   });
 });

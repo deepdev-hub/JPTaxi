@@ -13,10 +13,32 @@ const supportedErrorCodes = new Set([
   'INVALID_INSURANCE_DATES',
 ]);
 
+const genericMessageCodes = new Set([
+  'BAD_REQUEST',
+  'VALIDATION_ERROR',
+  'CONFLICT',
+]);
+
 export function translateApiError(error, t, fallback) {
   const code = supportedErrorCodes.has(error?.code) ? error.code : 'UNKNOWN';
   const translated = t(`errors.${code}`);
-  return translated.startsWith('errors.')
-    ? fallback || t('errors.UNKNOWN')
-    : translated;
+  const message = Array.isArray(error?.message)
+    ? error.message.join(', ')
+    : typeof error?.message === 'string'
+      ? error.message.trim()
+      : '';
+
+  if (message && genericMessageCodes.has(code)) {
+    return message;
+  }
+
+  if (!translated.startsWith('errors.')) {
+    return translated;
+  }
+
+  if (message && error?.status && error.status < 500) {
+    return message;
+  }
+
+  return fallback || t('errors.UNKNOWN');
 }

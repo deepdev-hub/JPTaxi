@@ -37,7 +37,7 @@ export class MailService {
     text: string;
     attachments?: nodemailer.SendMailOptions['attachments'];
   }): Promise<void> {
-    const mode = this.config.get<string>('MAIL_MODE', 'console');
+    const mode = this.getMailMode();
     if (mode === 'console') {
       console.log(`[MAIL console] To: ${message.to}`);
       console.log(`[MAIL console] Subject: ${message.subject}`);
@@ -61,7 +61,10 @@ export class MailService {
       auth: { user, pass },
     });
     await transporter.sendMail({
-      from: this.config.get<string>('SMTP_FROM', 'JP Taxi <no-reply@jptaxi.local>'),
+      from:
+        this.config.get<string>('SMTP_FROM')
+        ?? this.config.get<string>('APP_MAIL_FROM')
+        ?? 'JP Taxi <noreply@luongvanhungnet.xyz>',
       ...message,
     });
   }
@@ -102,7 +105,10 @@ export class MailService {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            from: this.config.getOrThrow<string>('MAIL_FROM'),
+            from:
+              this.config.get<string>('APP_MAIL_FROM')
+              ?? this.config.get<string>('MAIL_FROM')
+              ?? 'JP Taxi <noreply@luongvanhungnet.xyz>',
             to: [message.to],
             subject: message.subject,
             text: message.text,
@@ -120,5 +126,23 @@ export class MailService {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private getMailMode(): 'console' | 'smtp' | 'resend' {
+    const explicitMode = this.config.get<string>('MAIL_MODE');
+    if (explicitMode === 'console' || explicitMode === 'smtp' || explicitMode === 'resend') {
+      return explicitMode;
+    }
+    if (this.config.get<string>('RESEND_API_KEY')) {
+      return 'resend';
+    }
+    if (
+      this.config.get<string>('SMTP_HOST')
+      && this.config.get<string>('SMTP_USER')
+      && this.config.get<string>('SMTP_PASS')
+    ) {
+      return 'smtp';
+    }
+    return 'console';
   }
 }
