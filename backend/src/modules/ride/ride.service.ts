@@ -28,22 +28,13 @@ import { PricingRule } from '../../entities/pricing-rule.entity';
 import { MapService } from '../map/map.service';
 import { calculateFareFromRules } from '../../common/pricing.util';
 import { EstimateDto } from './dto/estimate.dto';
-
-const DISPATCH_RADIUS_KM = 2;
-const ENFORCE_DISPATCH_RADIUS_ON_ACCEPT = false;
-const PENDING_REQUEST_FRESHNESS_MINUTES = 24 * 60;
-
-function distanceKm(fromLat: number, fromLng: number, toLat: number, toLng: number) {
-  const radians = (degrees: number) => degrees * Math.PI / 180;
-  const deltaLat = radians(toLat - fromLat);
-  const deltaLng = radians(toLng - fromLng);
-  const startLat = radians(fromLat);
-  const endLat = radians(toLat);
-  const value =
-    Math.sin(deltaLat / 2) ** 2 +
-    Math.cos(startLat) * Math.cos(endLat) * Math.sin(deltaLng / 2) ** 2;
-  return 6371.0088 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
-}
+import { validatePaymentMethodSelection } from '../../common/payment-method.util';
+import { ConfigService } from '@nestjs/config';
+import { RideSearchDriverExclusion } from '../../entities/ride-search-driver-exclusion.entity';
+import {
+  calculateSearchRadiusKm,
+  isDispatchOfferExpired,
+} from './dispatch-policy';
 
 @Injectable()
 export class RideService {
@@ -70,10 +61,291 @@ export class RideService {
     private readonly conversationRepo: Repository<Conversation>,
     @InjectRepository(PricingRule)
     private readonly pricingRules: Repository<PricingRule>,
+    @InjectRepository(RideSearchDriverExclusion)
+    private readonly exclusionRepo: Repository<RideSearchDriverExclusion>,
     private readonly rideGateway: RideGateway,
     private readonly dataSource: DataSource,
     private readonly maps: MapService,
+    private readonly config: ConfigService,
   ) {}
+
+  private get dispatchInitialRadiusKm(): number {
+    return this.config.get<number>('DISPATCH_INITIAL_RADIUS_KM', 2);
+  }
+
+  private get dispatchRadiusStepKm(): number {
+    return this.config.get<number>('DISPATCH_RADIUS_STEP_KM', 1);
+  }
+
+  private get dispatchExpansionIntervalMs(): number {
+    return this.config.get<number>('DISPATCH_EXPANSION_INTERVAL_MS', 2_000);
+  }
+
+  private get dispatchOfferTimeoutMs(): number {
+    return this.config.get<number>('DISPATCH_OFFER_TIMEOUT_MS', 30_000);
+  }
+
+  private get dispatchLocationMaxAgeMinutes(): number {
+    return this.config.get<number>('DISPATCH_LOCATION_MAX_AGE_MINUTES', 30);
+  }
+
+  async processDispatchCycle(now = new Date()): Promise<void> {
+    const events = await this.dataSource.transaction(async (manager) => {
+      const emitted: Array<{
+        target: 'customer' | 'driver';
+        userId: number;
+        event: string;
+        payload: Record<string, unknown>;
+      }> = [];
+      const dispatches = manager.getRepository(RideRequestDispatch);
+      const requests = manager.getRepository(RideRequest);
+      const exclusions = manager.getRepository(RideSearchDriverExclusion);
+
+      const expiredOffers = await dispatches
+        .createQueryBuilder('dispatch')
+        .setLock('pessimistic_write')
+        .where('dispatch.status = :status', {
+          status: DispatchStatusType.pending,
+        })
+        .andWhere('dispatch.expires_at IS NOT NULL')
+        .andWhere('dispatch.expires_at <= :now', { now })
+        .getMany();
+
+      for (const offer of expiredOffers) {
+        offer.status = DispatchStatusType.timeout;
+        offer.respondedAt = now;
+        await dispatches.save(offer);
+
+        const request = await requests.findOne({
+          where: { requestId: offer.requestId },
+        });
+        if (!request || request.status !== RideRequestStatusType.searching) {
+          continue;
+        }
+
+        await exclusions
+          .createQueryBuilder()
+          .insert()
+          .values({
+            searchGroupId: request.searchGroupId,
+            driverId: offer.driverId,
+            requestId: request.requestId,
+            reason: 'timeout',
+          })
+          .orIgnore()
+          .execute();
+        request.searchStartedAt = now;
+        request.searchRadiusKm = this.dispatchInitialRadiusKm;
+        await requests.save(request);
+
+        const payload = {
+          requestId: request.requestId,
+          driverId: offer.driverId,
+          radiusKm: request.searchRadiusKm,
+          reason: 'timeout',
+        };
+        emitted.push(
+          {
+            target: 'driver',
+            userId: offer.driverId,
+            event: 'dispatchOfferExpired',
+            payload,
+          },
+          {
+            target: 'customer',
+            userId: request.customerId,
+            event: 'dispatchReset',
+            payload,
+          },
+        );
+      }
+
+      const searchingRequests = await requests
+        .createQueryBuilder('request')
+        .setLock('pessimistic_write')
+        .setOnLocked('skip_locked')
+        .where('request.status = :status', {
+          status: RideRequestStatusType.searching,
+        })
+        .andWhere(
+          `NOT EXISTS (
+            SELECT 1
+            FROM ride_request_dispatch active_dispatch
+            WHERE active_dispatch.request_id = request.request_id
+              AND active_dispatch.status = :pendingStatus
+              AND active_dispatch.expires_at > :now
+          )`,
+          { pendingStatus: DispatchStatusType.pending, now },
+        )
+        .orderBy('request.request_time', 'ASC')
+        .take(25)
+        .getMany();
+
+      for (const request of searchingRequests) {
+        const elapsedMs = Math.max(
+          0,
+          now.getTime() - new Date(request.searchStartedAt).getTime(),
+        );
+        const radiusKm = calculateSearchRadiusKm(
+          elapsedMs,
+          this.dispatchInitialRadiusKm,
+          this.dispatchRadiusStepKm,
+          this.dispatchExpansionIntervalMs,
+        );
+        const radiusChanged = request.searchRadiusKm !== radiusKm;
+        if (radiusChanged) {
+          request.searchRadiusKm = radiusKm;
+          await requests.save(request);
+          emitted.push({
+            target: 'customer',
+            userId: request.customerId,
+            event: 'dispatchRadiusUpdated',
+            payload: { requestId: request.requestId, radiusKm },
+          });
+        }
+
+        const locationFreshSince = new Date(
+          now.getTime() - this.dispatchLocationMaxAgeMinutes * 60_000,
+        );
+        const candidateRows = await manager.query<
+          Array<{ driverId: number | string; distanceKm: number | string }>
+        >(
+          `
+            SELECT
+              driver.driver_id AS "driverId",
+              (
+                6371.0088 * acos(
+                  LEAST(1.0::double precision, GREATEST(-1.0::double precision,
+                    cos(radians($1::double precision))
+                    * cos(radians(location.latitude::double precision))
+                    * cos(
+                      radians(location.longitude::double precision)
+                      - radians($2::double precision)
+                    )
+                    + sin(radians($1::double precision))
+                    * sin(radians(location.latitude::double precision))
+                  ))
+                )
+              ) AS "distanceKm"
+            FROM driver
+            INNER JOIN vehicle
+              ON vehicle.driver_id = driver.driver_id
+             AND vehicle.vehicle_type = $3
+            INNER JOIN LATERAL (
+              SELECT latitude, longitude, recorded_at
+              FROM driver_location_history
+              WHERE driver_id = driver.driver_id
+              ORDER BY recorded_at DESC
+              LIMIT 1
+            ) location ON TRUE
+            WHERE driver.status = 'approved'
+              AND driver.is_online = TRUE
+              AND location.recorded_at >= $4
+              AND NOT EXISTS (
+                SELECT 1
+                FROM trip
+                WHERE trip.driver_id = driver.driver_id
+                  AND trip.status = 'ongoing'
+              )
+              AND NOT EXISTS (
+                SELECT 1
+                FROM ride_request_dispatch pending_offer
+                WHERE pending_offer.driver_id = driver.driver_id
+                  AND pending_offer.status = 'pending'
+                  AND pending_offer.expires_at > $5
+              )
+              AND NOT EXISTS (
+                SELECT 1
+                FROM ride_search_driver_exclusion exclusion
+                WHERE exclusion.search_group_id = $6
+                  AND exclusion.driver_id = driver.driver_id
+              )
+              AND (
+                6371.0088 * acos(
+                  LEAST(1.0::double precision, GREATEST(-1.0::double precision,
+                    cos(radians($1::double precision))
+                    * cos(radians(location.latitude::double precision))
+                    * cos(
+                      radians(location.longitude::double precision)
+                      - radians($2::double precision)
+                    )
+                    + sin(radians($1::double precision))
+                    * sin(radians(location.latitude::double precision))
+                  ))
+                )
+              ) <= $7
+            ORDER BY "distanceKm" ASC, driver.driver_id ASC
+            FOR UPDATE OF driver SKIP LOCKED
+            LIMIT 1
+          `,
+          [
+            Number(request.pickupLat),
+            Number(request.pickupLng),
+            request.vehicleType,
+            locationFreshSince,
+            now,
+            request.searchGroupId,
+            radiusKm,
+          ],
+        );
+
+        const candidate = candidateRows[0];
+        if (!candidate) continue;
+
+        const attemptRow = await dispatches
+          .createQueryBuilder('dispatch')
+          .select('COALESCE(MAX(dispatch.attemptNumber), 0)', 'max')
+          .where('dispatch.requestId = :requestId', {
+            requestId: request.requestId,
+          })
+          .getRawOne<{ max: string | number }>();
+        const expiresAt = new Date(now.getTime() + this.dispatchOfferTimeoutMs);
+        await dispatches.save(
+          dispatches.create({
+            requestId: request.requestId,
+            driverId: Number(candidate.driverId),
+            attemptNumber: Number(attemptRow?.max ?? 0) + 1,
+            status: DispatchStatusType.pending,
+            respondedAt: null,
+            expiresAt,
+            radiusKm,
+          }),
+        );
+
+        const payload = {
+          requestId: request.requestId,
+          radiusKm,
+          offerExpiresAt: expiresAt.toISOString(),
+          distanceKm: Math.round(Number(candidate.distanceKm) * 1000) / 1000,
+        };
+        emitted.push(
+          {
+            target: 'driver',
+            userId: Number(candidate.driverId),
+            event: 'dispatchOfferCreated',
+            payload,
+          },
+          {
+            target: 'customer',
+            userId: request.customerId,
+            event: 'dispatchOfferCreated',
+            payload,
+          },
+        );
+      }
+
+      return emitted;
+    });
+
+    for (const event of events) {
+      this.rideGateway.emitToUser(
+        event.userId,
+        event.target,
+        event.event,
+        event.payload,
+      );
+    }
+  }
 
   async estimate(dto: EstimateDto) {
     const route = await this.maps.route(
@@ -174,7 +446,11 @@ export class RideService {
       estimatedFareVnd: estimate.fareVnd,
       estimatedFareJpy: estimate.fareJpy,
       rawFareVnd: estimate.rawFareVnd,
+      estimatedDistanceMeters: Math.round(estimate.distanceMeters),
+      estimatedDurationSeconds: Math.round(estimate.durationSeconds),
       requestTime: new Date(),
+      searchStartedAt: new Date(),
+      searchRadiusKm: this.dispatchInitialRadiusKm,
     });
 
     return this.rideRequestRepo.save(request);
@@ -197,7 +473,31 @@ export class RideService {
     });
 
     if (activeRequest && activeRequest.status !== RideRequestStatusType.assigned) {
-      return { type: 'request', data: activeRequest };
+      const offer = await this.dispatchRepo.findOne({
+        where: {
+          requestId: activeRequest.requestId,
+          status: DispatchStatusType.pending,
+        },
+        order: { sentAt: 'DESC' },
+      });
+      const hasActiveOffer = Boolean(
+        offer?.expiresAt && !isDispatchOfferExpired(offer.expiresAt),
+      );
+      const diagnostic = hasActiveOffer
+        ? null
+        : await this.getDispatchDiagnostic(activeRequest);
+      return {
+        type: 'request',
+        data: activeRequest,
+        dispatch: {
+          phase: hasActiveOffer ? 'waiting_driver' : 'expanding',
+          radiusKm: activeRequest.searchRadiusKm,
+          offerExpiresAt: hasActiveOffer
+            ? offer?.expiresAt?.toISOString()
+            : null,
+          diagnostic,
+        },
+      };
     }
 
     // 2. Tìm chuyến đi đang hoạt động (ongoing)
@@ -254,10 +554,60 @@ export class RideService {
     }
 
     if (activeRequest) {
-      return { type: 'request', data: activeRequest };
+      return {
+        type: 'request',
+        data: activeRequest,
+        dispatch: {
+          phase: 'expanding',
+          radiusKm: activeRequest.searchRadiusKm,
+          offerExpiresAt: null,
+        },
+      };
     }
 
     return null;
+  }
+
+  private async getDispatchDiagnostic(
+    request: RideRequest,
+  ): Promise<string> {
+    const freshSince = new Date(
+      Date.now() - this.dispatchLocationMaxAgeMinutes * 60_000,
+    );
+    const [counts] = await this.dataSource.query<Array<{
+      approved: string;
+      online: string;
+      fresh: string;
+    }>>(
+      `
+        SELECT
+          COUNT(*) FILTER (WHERE driver.status = 'approved') AS approved,
+          COUNT(*) FILTER (
+            WHERE driver.status = 'approved' AND driver.is_online = TRUE
+          ) AS online,
+          COUNT(*) FILTER (
+            WHERE driver.status = 'approved'
+              AND driver.is_online = TRUE
+              AND location.recorded_at >= $2
+          ) AS fresh
+        FROM driver
+        INNER JOIN vehicle
+          ON vehicle.driver_id = driver.driver_id
+         AND vehicle.vehicle_type = $1
+        LEFT JOIN LATERAL (
+          SELECT recorded_at
+          FROM driver_location_history
+          WHERE driver_id = driver.driver_id
+          ORDER BY recorded_at DESC
+          LIMIT 1
+        ) location ON TRUE
+      `,
+      [request.vehicleType, freshSince],
+    );
+    if (Number(counts?.approved ?? 0) === 0) return 'no_approved_driver';
+    if (Number(counts?.online ?? 0) === 0) return 'no_online_driver';
+    if (Number(counts?.fresh ?? 0) === 0) return 'no_fresh_location';
+    return 'no_available_driver_in_radius';
   }
 
   async getActiveRideForDriver(driverId: number): Promise<any> {
@@ -315,198 +665,79 @@ export class RideService {
     };
   }
 
-  private async getPinnedPendingRequestForDriver(
-    driverId: number,
-    distanceSql?: string,
-    parameters: Record<string, number | Date> = {},
-  ) {
-    const freshSince = new Date(Date.now() - PENDING_REQUEST_FRESHNESS_MINUTES * 60 * 1000);
-    const query = this.rideRequestRepo
+  async getPendingRequestForDriver(driverId: number): Promise<any> {
+    await this.processDispatchCycle();
+    const row = await this.rideRequestRepo
       .createQueryBuilder('rr')
       .innerJoin(Customer, 'c', 'c.customer_id = rr.customer_id')
       .innerJoin(
         RideRequestDispatch,
         'rrd',
-        'rrd.request_id = rr.request_id AND rrd.driver_id = :driverId AND rrd.status = :dispatchStatus',
-        { driverId, dispatchStatus: DispatchStatusType.pending },
-      )
-      .select([
-        'rr.request_id AS "requestId"',
-        'rr.customer_id AS "customerId"',
-        'rr.pickup_address AS "pickupAddress"',
-        'rr.pickup_lat AS "pickupLat"',
-        'rr.pickup_lng AS "pickupLng"',
-        'rr.dropoff_address AS "dropoffAddress"',
-        'rr.dropoff_lat AS "dropoffLat"',
-        'rr.dropoff_lng AS "dropoffLng"',
-        'rr.vehicle_type AS "vehicleType"',
-        'rr.actual_passenger_name AS "actualPassengerName"',
-        'rr.actual_passenger_phone AS "actualPassengerPhone"',
-        'rr.note_to_driver AS "noteToDriver"',
-        'rr.request_time AS "requestTime"',
-        'c.first_name AS "customerFirstName"',
-        'c.last_name AS "customerLastName"',
-        'c.phone AS "customerPhone"',
-        'c.avatar_url AS "customerAvatarUrl"',
-      ])
-      .where('rr.status = :status', { status: RideRequestStatusType.searching })
-      .andWhere('rr.request_time >= :freshSince', { freshSince })
-      .orderBy('rrd.sent_at', 'DESC')
-      .limit(1);
-
-    if (distanceSql) {
-      query.addSelect(`${distanceSql} AS "distanceKm"`).setParameters(parameters);
-    }
-
-    const row = await query.getRawOne<Record<string, string | number | Date | null>>();
-    return row ? this.mapPendingRequestRow(row) : null;
-  }
-
-  private async pinPendingRequestForDriver(driverId: number, requestId: number) {
-    const existing = await this.dispatchRepo.findOne({
-      where: { requestId, driverId, status: DispatchStatusType.pending },
-    });
-    if (existing) return;
-
-    await this.dispatchRepo.save(this.dispatchRepo.create({
-      requestId,
-      driverId,
-      attemptNumber: 1,
-      status: DispatchStatusType.pending,
-      respondedAt: null,
-    }));
-  }
-
-  async getPendingRequestForDriver(driverId: number): Promise<any> {
-    const latestLocation = await this.driverLocationRepo.findOne({
-      where: { driverId },
-      order: { recordedAt: 'DESC' },
-    });
-
-    if (!latestLocation) {
-      return {
-        request: null,
-        radiusKm: DISPATCH_RADIUS_KM,
-        message: 'ドライバー位置情報がないため、近くの配車を検索できません。',
-      };
-    }
-
-    const driverLat = Number(latestLocation.latitude);
-    const driverLng = Number(latestLocation.longitude);
-    const distanceSql = `(
-      6371.0088 * acos(
-        LEAST(1.0::double precision, GREATEST(-1.0::double precision,
-          cos(radians(:driverLat::double precision))
-          * cos(radians(rr.pickup_lat::double precision))
-          * cos(radians(rr.pickup_lng::double precision) - radians(:driverLng::double precision))
-          + sin(radians(:driverLat::double precision))
-          * sin(radians(rr.pickup_lat::double precision))
-        ))
-      )
-    )`;
-
-    const pinnedRequest = await this.getPinnedPendingRequestForDriver(
-      driverId,
-      distanceSql,
-      { driverLat, driverLng },
-    );
-    if (pinnedRequest) {
-      return {
-        radiusKm: DISPATCH_RADIUS_KM,
-        driverLocation: {
-          latitude: driverLat,
-          longitude: driverLng,
-          recordedAt: latestLocation.recordedAt,
-        },
-        request: pinnedRequest,
-      };
-    }
-
-    const row = await this.rideRequestRepo
-      .createQueryBuilder('rr')
-      .innerJoin(Customer, 'c', 'c.customer_id = rr.customer_id')
-      .select([
-        'rr.request_id AS "requestId"',
-        'rr.customer_id AS "customerId"',
-        'rr.pickup_address AS "pickupAddress"',
-        'rr.pickup_lat AS "pickupLat"',
-        'rr.pickup_lng AS "pickupLng"',
-        'rr.dropoff_address AS "dropoffAddress"',
-        'rr.dropoff_lat AS "dropoffLat"',
-        'rr.dropoff_lng AS "dropoffLng"',
-        'rr.vehicle_type AS "vehicleType"',
-        'rr.actual_passenger_name AS "actualPassengerName"',
-        'rr.actual_passenger_phone AS "actualPassengerPhone"',
-        'rr.note_to_driver AS "noteToDriver"',
-        'rr.request_time AS "requestTime"',
-        'c.first_name AS "customerFirstName"',
-        'c.last_name AS "customerLastName"',
-        'c.phone AS "customerPhone"',
-        'c.avatar_url AS "customerAvatarUrl"',
-        `${distanceSql} AS "distanceKm"`,
-      ])
-      .where('rr.status = :status', { status: RideRequestStatusType.searching })
-      .andWhere(`${distanceSql} <= :radiusKm`, { radiusKm: DISPATCH_RADIUS_KM })
-      .andWhere('rr.request_time >= :freshSince', {
-        freshSince: new Date(Date.now() - PENDING_REQUEST_FRESHNESS_MINUTES * 60 * 1000),
-      })
-      .andWhere(
-        `NOT EXISTS (
-          SELECT 1
-          FROM ride_request_dispatch rrd
-          WHERE rrd.request_id = rr.request_id
-            AND rrd.driver_id = :excludedDriverId
-            AND rrd.status IN (:...excludedDispatchStatuses)
-        )`,
+        `rrd.request_id = rr.request_id
+          AND rrd.driver_id = :driverId
+          AND rrd.status = :dispatchStatus
+          AND rrd.expires_at > :now`,
         {
-          excludedDriverId: driverId,
-          excludedDispatchStatuses: [DispatchStatusType.accepted, DispatchStatusType.rejected],
+          driverId,
+          dispatchStatus: DispatchStatusType.pending,
+          now: new Date(),
         },
       )
-      .setParameters({ driverLat, driverLng })
-      .orderBy(distanceSql, 'ASC')
-      .addOrderBy('RANDOM()')
+      .select([
+        'rr.request_id AS "requestId"',
+        'rr.customer_id AS "customerId"',
+        'rr.pickup_address AS "pickupAddress"',
+        'rr.pickup_lat AS "pickupLat"',
+        'rr.pickup_lng AS "pickupLng"',
+        'rr.dropoff_address AS "dropoffAddress"',
+        'rr.dropoff_lat AS "dropoffLat"',
+        'rr.dropoff_lng AS "dropoffLng"',
+        'rr.vehicle_type AS "vehicleType"',
+        'rr.actual_passenger_name AS "actualPassengerName"',
+        'rr.actual_passenger_phone AS "actualPassengerPhone"',
+        'rr.note_to_driver AS "noteToDriver"',
+        'rr.request_time AS "requestTime"',
+        'c.first_name AS "customerFirstName"',
+        'c.last_name AS "customerLastName"',
+        'c.phone AS "customerPhone"',
+        'c.avatar_url AS "customerAvatarUrl"',
+        'rrd.radius_km AS "radiusKm"',
+        'rrd.expires_at AS "offerExpiresAt"',
+        `(
+          SELECT 6371.0088 * acos(
+            LEAST(1.0::double precision, GREATEST(-1.0::double precision,
+              cos(radians(rr.pickup_lat::double precision))
+              * cos(radians(location.latitude::double precision))
+              * cos(
+                radians(location.longitude::double precision)
+                - radians(rr.pickup_lng::double precision)
+              )
+              + sin(radians(rr.pickup_lat::double precision))
+              * sin(radians(location.latitude::double precision))
+            ))
+          )
+          FROM driver_location_history location
+          WHERE location.driver_id = rrd.driver_id
+          ORDER BY location.recorded_at DESC
+          LIMIT 1
+        ) AS "distanceKm"`,
+      ])
+      .where('rr.status = :status', { status: RideRequestStatusType.searching })
+      .orderBy('rrd.sent_at', 'DESC')
       .limit(1)
       .getRawOne<Record<string, string | number | Date | null>>();
 
     if (!row) {
       return {
         request: null,
-        radiusKm: DISPATCH_RADIUS_KM,
-        message: '半径2km以内の配車リクエストを検索しています。',
+        message: 'No dispatch offer is assigned to this driver.',
       };
     }
 
-    await this.pinPendingRequestForDriver(driverId, Number(row.requestId));
-
     return {
-      radiusKm: DISPATCH_RADIUS_KM,
-      driverLocation: {
-        latitude: driverLat,
-        longitude: driverLng,
-        recordedAt: latestLocation.recordedAt,
-      },
-      request: {
-        requestId: Number(row.requestId),
-        customerId: Number(row.customerId),
-        pickupAddress: String(row.pickupAddress ?? ''),
-        pickupLat: Number(row.pickupLat),
-        pickupLng: Number(row.pickupLng),
-        dropoffAddress: String(row.dropoffAddress ?? ''),
-        dropoffLat: Number(row.dropoffLat),
-        dropoffLng: Number(row.dropoffLng),
-        vehicleType: String(row.vehicleType ?? ''),
-        actualPassengerName: row.actualPassengerName ? String(row.actualPassengerName) : null,
-        actualPassengerPhone: row.actualPassengerPhone ? String(row.actualPassengerPhone) : null,
-        noteToDriver: row.noteToDriver ? String(row.noteToDriver) : null,
-        requestTime: row.requestTime,
-        distanceKm: row.distanceKm != null ? Math.round(Number(row.distanceKm) * 1000) / 1000 : null,
-        customer: {
-          name: [row.customerLastName, row.customerFirstName].filter(Boolean).join(' '),
-          phone: String(row.customerPhone ?? ''),
-          avatarUrl: row.customerAvatarUrl ? String(row.customerAvatarUrl) : null,
-        },
-      },
+      radiusKm: Number(row.radiusKm),
+      offerExpiresAt: row.offerExpiresAt,
+      request: this.mapPendingRequestRow(row),
     };
   }
 
@@ -532,90 +763,138 @@ export class RideService {
   }
 
   async acceptRequest(driverId: number, requestId: number): Promise<any> {
-    const request = await this.rideRequestRepo.findOne({ where: { requestId } });
-    if (!request) {
+    const requestSnapshot = await this.rideRequestRepo.findOne({
+      where: { requestId },
+    });
+    if (!requestSnapshot) {
       throw new NotFoundException('配車リクエストが見つかりません。');
     }
-
-    if (request.status !== RideRequestStatusType.searching) {
-      throw new BadRequestException('この配車リクエストはすでに処理されています。');
-    }
-
-    const freshSince = Date.now() - PENDING_REQUEST_FRESHNESS_MINUTES * 60 * 1000;
-    if (new Date(request.requestTime).getTime() < freshSince) {
-      throw new BadRequestException('この配車リクエストは有効期限が切れています。');
-    }
-
-    const latestLocation = await this.driverLocationRepo.findOne({
-      where: { driverId },
-      order: { recordedAt: 'DESC' },
+    const offerSnapshot = await this.dispatchRepo.findOne({
+      where: {
+        requestId,
+        driverId,
+        status: DispatchStatusType.pending,
+      },
+      order: { attemptNumber: 'DESC' },
     });
-    if (latestLocation) {
-      const pickupDistance = distanceKm(
-        Number(latestLocation.latitude),
-        Number(latestLocation.longitude),
-        Number(request.pickupLat),
-        Number(request.pickupLng),
+    if (!offerSnapshot) {
+      throw new BadRequestException(
+        'This ride request is not assigned to the current driver.',
       );
+    }
+    if (
+      !offerSnapshot.expiresAt
+      || isDispatchOfferExpired(offerSnapshot.expiresAt)
+    ) {
+      await this.processDispatchCycle();
+      throw new BadRequestException('This dispatch offer has expired.');
+    }
 
-      if (ENFORCE_DISPATCH_RADIUS_ON_ACCEPT && pickupDistance > DISPATCH_RADIUS_KM) {
-        throw new BadRequestException('半径2km以内の配車リクエストのみ承認できます。');
+    const estimate = requestSnapshot.estimatedDistanceMeters != null
+      && requestSnapshot.estimatedDurationSeconds != null
+      && requestSnapshot.estimatedFareVnd != null
+      && requestSnapshot.estimatedFareJpy != null
+      ? {
+          distanceMeters: requestSnapshot.estimatedDistanceMeters,
+          durationSeconds: requestSnapshot.estimatedDurationSeconds,
+          fareVnd: requestSnapshot.estimatedFareVnd,
+          fareJpy: requestSnapshot.estimatedFareJpy,
+          rawFareVnd: requestSnapshot.rawFareVnd ?? requestSnapshot.estimatedFareVnd,
+          exchangeRateVndToJpy: 166.6667,
+        }
+      : await this.estimate({
+          startLat: Number(requestSnapshot.pickupLat),
+          startLng: Number(requestSnapshot.pickupLng),
+          endLat: Number(requestSnapshot.dropoffLat),
+          endLng: Number(requestSnapshot.dropoffLng),
+          vehicleType: requestSnapshot.vehicleType,
+        });
+    const accepted = await this.dataSource.transaction(async (manager) => {
+      const requests = manager.getRepository(RideRequest);
+      const dispatches = manager.getRepository(RideRequestDispatch);
+      const trips = manager.getRepository(Trip);
+      const request = await requests
+        .createQueryBuilder('request')
+        .setLock('pessimistic_write')
+        .where('request.request_id = :requestId', { requestId })
+        .getOne();
+      if (!request) {
+        throw new NotFoundException('配車リクエストが見つかりません。');
       }
-    }
+      if (request.status !== RideRequestStatusType.searching) {
+        throw new BadRequestException(
+          'この配車リクエストはすでに処理されています。',
+        );
+      }
 
-    const estimate = await this.estimate({
-      startLat: Number(request.pickupLat),
-      startLng: Number(request.pickupLng),
-      endLat: Number(request.dropoffLat),
-      endLng: Number(request.dropoffLng),
-      vehicleType: request.vehicleType,
+      const offer = await dispatches
+        .createQueryBuilder('dispatch')
+        .setLock('pessimistic_write')
+        .where('dispatch.request_id = :requestId', { requestId })
+        .andWhere('dispatch.driver_id = :driverId', { driverId })
+        .andWhere('dispatch.status = :status', {
+          status: DispatchStatusType.pending,
+        })
+        .orderBy('dispatch.attempt_number', 'DESC')
+        .getOne();
+      if (
+        !offer?.expiresAt
+        || isDispatchOfferExpired(offer.expiresAt)
+      ) {
+        throw new BadRequestException('This dispatch offer has expired.');
+      }
+
+      request.status = RideRequestStatusType.assigned;
+      await requests.save(request);
+      offer.status = DispatchStatusType.accepted;
+      offer.respondedAt = new Date();
+      await dispatches.save(offer);
+
+      const trip = await trips.save(
+        trips.create({
+          rideRequest: request,
+          driverId,
+          startTime: new Date(),
+          endTime: null,
+          paymentRequestedAt: null,
+          actualDistanceKm: (estimate.distanceMeters / 1000).toFixed(2),
+          exchangeRateVndToJpy: estimate.exchangeRateVndToJpy.toFixed(4),
+          finalFareVnd: estimate.fareVnd,
+          finalFareJpy: estimate.fareJpy,
+          rawFareVnd: estimate.rawFareVnd,
+          status: TripStatusType.ongoing,
+        }),
+      );
+      return { request, trip };
     });
-
-    const claimResult = await this.rideRequestRepo.update(
-      { requestId: request.requestId, status: RideRequestStatusType.searching },
-      { status: RideRequestStatusType.assigned },
+    await this.ensureRideConversation(
+      accepted.request.customerId,
+      driverId,
+      accepted.request.requestId,
     );
-    if (!claimResult.affected) {
-      throw new BadRequestException('この配車リクエストは他のドライバーが承認しました。');
-    }
-
-    request.status = RideRequestStatusType.assigned;
-    await this.dispatchRepo.save(this.dispatchRepo.create({
-      requestId: request.requestId,
-      driverId,
-      attemptNumber: 1,
-      status: DispatchStatusType.accepted,
-      respondedAt: new Date(),
-    }));
-
-    const trip = this.tripRepo.create({
-      rideRequest: request,
-      driverId,
-      startTime: new Date(),
-      endTime: null,
-      paymentRequestedAt: null,
-      actualDistanceKm: (estimate.distanceMeters / 1000).toFixed(2),
-      exchangeRateVndToJpy: estimate.exchangeRateVndToJpy.toFixed(4),
-      finalFareVnd: estimate.fareVnd,
-      finalFareJpy: estimate.fareJpy,
-      rawFareVnd: estimate.rawFareVnd,
-      status: TripStatusType.ongoing,
-    });
-    const savedTrip = await this.tripRepo.save(trip);
-    await this.ensureRideConversation(request.customerId, driverId, request.requestId);
 
     const payload = {
-      requestId: request.requestId,
-      tripId: savedTrip.tripId,
+      requestId: accepted.request.requestId,
+      tripId: accepted.trip.tripId,
       driverId,
       status: 'assigned',
     };
-    this.rideGateway.emitToRequest(request.requestId, 'rideAccepted', payload);
-    this.rideGateway.emitToUser(request.customerId, 'customer', 'rideAccepted', payload);
+    this.rideGateway.emitToRequest(
+      accepted.request.requestId,
+      'rideAccepted',
+      payload,
+    );
+    this.rideGateway.emitToUser(
+      accepted.request.customerId,
+      'customer',
+      'rideAccepted',
+      payload,
+    );
+    this.rideGateway.emitToUser(driverId, 'driver', 'rideAccepted', payload);
 
     return {
       ...payload,
-      trip: savedTrip,
+      trip: accepted.trip,
     };
   }
 
@@ -639,46 +918,77 @@ export class RideService {
   }
 
   async rejectPendingRequest(driverId: number, requestId: number): Promise<any> {
-    const request = await this.rideRequestRepo.findOne({ where: { requestId } });
-    if (!request) {
-      throw new NotFoundException('配車リクエストが見つかりません。');
-    }
+    const now = new Date();
+    const result = await this.dataSource.transaction(async (manager) => {
+      const requests = manager.getRepository(RideRequest);
+      const dispatches = manager.getRepository(RideRequestDispatch);
+      const exclusions = manager.getRepository(RideSearchDriverExclusion);
+      const request = await requests
+        .createQueryBuilder('request')
+        .setLock('pessimistic_write')
+        .where('request.request_id = :requestId', { requestId })
+        .getOne();
+      if (!request) {
+        throw new NotFoundException('配車リクエストが見つかりません。');
+      }
+      if (request.status !== RideRequestStatusType.searching) {
+        return { request, status: 'ignored' };
+      }
 
-    if (request.status !== RideRequestStatusType.searching) {
-      return {
-        requestId,
-        driverId,
-        status: 'ignored',
-        message: 'この配車リクエストはすでに処理されています。',
-      };
-    }
+      const offer = await dispatches.findOne({
+        where: {
+          requestId,
+          driverId,
+          status: DispatchStatusType.pending,
+        },
+        order: { attemptNumber: 'DESC' },
+      });
+      if (!offer) {
+        throw new BadRequestException(
+          'This ride request is not assigned to the current driver.',
+        );
+      }
 
-    const existing = await this.dispatchRepo.findOne({
-      where: { requestId, driverId, status: DispatchStatusType.rejected },
+      offer.status = DispatchStatusType.rejected;
+      offer.respondedAt = now;
+      await dispatches.save(offer);
+      await exclusions
+        .createQueryBuilder()
+        .insert()
+        .values({
+          searchGroupId: request.searchGroupId,
+          driverId,
+          requestId,
+          reason: 'rejected',
+        })
+        .orIgnore()
+        .execute();
+
+      request.searchStartedAt = now;
+      request.searchRadiusKm = this.dispatchInitialRadiusKm;
+      await requests.save(request);
+      return { request, status: DispatchStatusType.rejected };
     });
-    if (existing) {
-      return { requestId, driverId, status: DispatchStatusType.rejected };
-    }
 
-    const pinned = await this.dispatchRepo.findOne({
-      where: { requestId, driverId, status: DispatchStatusType.pending },
-    });
-    if (pinned) {
-      pinned.status = DispatchStatusType.rejected;
-      pinned.respondedAt = new Date();
-      await this.dispatchRepo.save(pinned);
-      return { requestId, driverId, status: DispatchStatusType.rejected };
-    }
-
-    await this.dispatchRepo.save(this.dispatchRepo.create({
+    const payload = {
       requestId,
       driverId,
-      attemptNumber: 1,
-      status: DispatchStatusType.rejected,
-      respondedAt: new Date(),
-    }));
-
-    return { requestId, driverId, status: DispatchStatusType.rejected };
+      status: result.status,
+      radiusKm: result.request.searchRadiusKm,
+    };
+    this.rideGateway.emitToUser(
+      driverId,
+      'driver',
+      'dispatchOfferRejected',
+      payload,
+    );
+    this.rideGateway.emitToUser(
+      result.request.customerId,
+      'customer',
+      'dispatchReset',
+      payload,
+    );
+    return payload;
   }
 
   async requestPaymentFromDriver(driverId: number, tripId: number): Promise<any> {
@@ -720,75 +1030,91 @@ export class RideService {
   }
 
   async cancelAcceptedRideByDriver(driverId: number, tripId: number): Promise<any> {
-    const trip = await this.tripRepo
-      .createQueryBuilder('trip')
-      .innerJoinAndSelect('trip.rideRequest', 'rideRequest')
-      .where('trip.trip_id = :tripId', { tripId })
-      .getOne();
+    const cancelledAt = new Date();
+    const result = await this.dataSource.transaction(async (manager) => {
+      const trips = manager.getRepository(Trip);
+      const requests = manager.getRepository(RideRequest);
+      const exclusions = manager.getRepository(RideSearchDriverExclusion);
+      const trip = await trips
+        .createQueryBuilder('trip')
+        .innerJoinAndSelect('trip.rideRequest', 'rideRequest')
+        .setLock('pessimistic_write')
+        .where('trip.trip_id = :tripId', { tripId })
+        .getOne();
 
-    if (!trip) {
-      throw new NotFoundException('対象の乗車が見つかりません。');
-    }
+      if (!trip) {
+        throw new NotFoundException('対象の乗車が見つかりません。');
+      }
+      if (trip.driverId !== driverId) {
+        throw new ForbiddenException('この乗車をキャンセルする権限がありません。');
+      }
+      if (trip.status !== TripStatusType.ongoing) {
+        throw new BadRequestException('完了またはキャンセル済みの乗車はキャンセルできません。');
+      }
 
-    if (trip.driverId !== driverId) {
-      throw new ForbiddenException('この乗車をキャンセルする権限がありません。');
-    }
+      const oldRequest = trip.rideRequest;
+      trip.status = TripStatusType.cancelled_by_admin;
+      trip.endTime = cancelledAt;
+      trip.paymentRequestedAt = null;
+      await trips.save(trip);
 
-    if (trip.status !== TripStatusType.ongoing) {
-      throw new BadRequestException('完了またはキャンセル済みの乗車はキャンセルできません。');
-    }
+      oldRequest.status = RideRequestStatusType.failed;
+      await requests.save(oldRequest);
 
-    const oldRequest = trip.rideRequest;
+      const savedReplacement = await requests.save(requests.create({
+        customerId: oldRequest.customerId,
+        pickupAddress: oldRequest.pickupAddress,
+        pickupLat: oldRequest.pickupLat,
+        pickupLng: oldRequest.pickupLng,
+        dropoffAddress: oldRequest.dropoffAddress,
+        dropoffLat: oldRequest.dropoffLat,
+        dropoffLng: oldRequest.dropoffLng,
+        vehicleType: oldRequest.vehicleType,
+        status: RideRequestStatusType.searching,
+        actualPassengerName: oldRequest.actualPassengerName,
+        actualPassengerPhone: oldRequest.actualPassengerPhone,
+        noteToDriver: oldRequest.noteToDriver,
+        estimatedFareVnd: oldRequest.estimatedFareVnd,
+        estimatedFareJpy: oldRequest.estimatedFareJpy,
+        rawFareVnd: oldRequest.rawFareVnd,
+        requestTime: cancelledAt,
+        searchGroupId: oldRequest.searchGroupId,
+        searchStartedAt: cancelledAt,
+        searchRadiusKm: this.dispatchInitialRadiusKm,
+      }));
+      await exclusions
+        .createQueryBuilder()
+        .insert()
+        .values({
+          searchGroupId: oldRequest.searchGroupId,
+          driverId,
+          requestId: savedReplacement.requestId,
+          reason: 'cancelled_after_accept',
+        })
+        .orIgnore()
+        .execute();
 
-    trip.status = TripStatusType.cancelled_by_admin;
-    trip.endTime = new Date();
-    trip.paymentRequestedAt = null;
-    await this.tripRepo.save(trip);
-
-    oldRequest.status = RideRequestStatusType.failed;
-    await this.rideRequestRepo.save(oldRequest);
-
-    const replacementRequest = this.rideRequestRepo.create({
-      customerId: oldRequest.customerId,
-      pickupAddress: oldRequest.pickupAddress,
-      pickupLat: oldRequest.pickupLat,
-      pickupLng: oldRequest.pickupLng,
-      dropoffAddress: oldRequest.dropoffAddress,
-      dropoffLat: oldRequest.dropoffLat,
-      dropoffLng: oldRequest.dropoffLng,
-      vehicleType: oldRequest.vehicleType,
-      status: RideRequestStatusType.searching,
-      actualPassengerName: oldRequest.actualPassengerName,
-      actualPassengerPhone: oldRequest.actualPassengerPhone,
-      noteToDriver: oldRequest.noteToDriver,
-      estimatedFareVnd: oldRequest.estimatedFareVnd,
-      estimatedFareJpy: oldRequest.estimatedFareJpy,
-      rawFareVnd: oldRequest.rawFareVnd,
-      requestTime: new Date(),
+      return { oldRequest, trip, savedReplacement };
     });
-    const savedReplacement = await this.rideRequestRepo.save(replacementRequest);
-    await this.dispatchRepo.save(this.dispatchRepo.create({
-      requestId: savedReplacement.requestId,
-      driverId,
-      attemptNumber: 1,
-      status: DispatchStatusType.rejected,
-      respondedAt: new Date(),
-    }));
 
     const payload = {
-      tripId: trip.tripId,
-      oldRequestId: oldRequest.requestId,
-      requestId: savedReplacement.requestId,
+      tripId: result.trip.tripId,
+      oldRequestId: result.oldRequest.requestId,
+      requestId: result.savedReplacement.requestId,
       driverId,
       status: 'driver_cancelled',
     };
 
-    this.rideGateway.emitToTrip(trip.tripId, 'driverCancelledRide', payload);
-    this.rideGateway.emitToUser(oldRequest.customerId, 'customer', 'driverCancelledRide', payload);
+    this.rideGateway.emitToTrip(result.trip.tripId, 'driverCancelledRide', payload);
+    this.rideGateway.emitToUser(result.oldRequest.customerId, 'customer', 'driverCancelledRide', payload);
+    this.rideGateway.emitToUser(result.oldRequest.customerId, 'customer', 'dispatchReset', {
+      ...payload,
+      radiusKm: result.savedReplacement.searchRadiusKm,
+    });
 
     return {
       ...payload,
-      request: savedReplacement,
+      request: result.savedReplacement,
     };
   }
 
@@ -812,13 +1138,43 @@ export class RideService {
     }
 
     request.status = RideRequestStatusType.failed; // Chuyển trạng thái sang thất bại (đã hủy)
-    return this.rideRequestRepo.save(request);
+    const saved = await this.rideRequestRepo.save(request);
+    const offers = await this.dispatchRepo.find({
+      where: {
+        requestId,
+        status: DispatchStatusType.pending,
+      },
+    });
+    const now = new Date();
+    for (const offer of offers) {
+      offer.status = DispatchStatusType.timeout;
+      offer.respondedAt = now;
+    }
+    if (offers.length) await this.dispatchRepo.save(offers);
+    const payload = { requestId, status: 'customer_cancelled' };
+    offers.forEach((offer) =>
+      this.rideGateway.emitToUser(
+        offer.driverId,
+        'driver',
+        'rideRequestCancelled',
+        payload,
+      ),
+    );
+    return saved;
   }
 
   /**
    * Xử lý thanh toán chuyến đi
    */
   async processPaymentTransactional(customerId: number, dto: ProcessPaymentDto): Promise<any> {
+    try {
+      validatePaymentMethodSelection(dto.paymentMethod, dto.paymentMethodId);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Invalid payment method',
+      );
+    }
+
     const result = await this.dataSource.transaction(async (manager) => {
       const paymentRepo = manager.getRepository(PaymentTransaction);
       const trip = await manager.getRepository(Trip)
@@ -863,6 +1219,11 @@ export class RideService {
 
       if (trip.status !== TripStatusType.ongoing) {
         throw new BadRequestException('Trip is not payable');
+      }
+      if (!trip.paymentRequestedAt) {
+        throw new BadRequestException(
+          'The driver has not requested payment for this trip.',
+        );
       }
 
       let storedMethod: CustomerPaymentMethod | null = null;

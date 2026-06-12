@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import PDFDocument from 'pdfkit';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import {
   buildInvoiceNumber,
   calculateVatFromInclusiveTotal,
@@ -49,6 +49,7 @@ export class InvoicesService {
     @InjectRepository(AuditLog)
     private readonly auditLogs: Repository<AuditLog>,
     private readonly mail: MailService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async getTripInvoice(tripId: number, user: AuthUser) {
@@ -73,57 +74,73 @@ export class InvoicesService {
     user: AuthUser,
     dto: IssueInvoiceDto,
   ) {
-    const trip = await this.loadTripOrThrow(tripId);
-    await this.assertTripAccess(trip, user);
-    const existing = await this.invoices.findOne({ where: { tripId } });
-    if (existing) {
-      return {
-        message: 'Invoice was already issued.',
-        alreadyIssued: true,
-        invoice: existing.payload,
-      };
-    }
-    if (trip.status !== TripStatusType.completed) {
-      throw new BadRequestException('Only completed trips can be invoiced.');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const trips = manager.getRepository(Trip);
+      const invoices = manager.getRepository(Invoice);
+      const payments = manager.getRepository(PaymentTransaction);
+      const auditLogs = manager.getRepository(AuditLog);
+      const trip = await trips
+        .createQueryBuilder('trip')
+        .innerJoinAndSelect('trip.rideRequest', 'rideRequest')
+        .setLock('pessimistic_write')
+        .where('trip.trip_id = :tripId', { tripId })
+        .getOne();
+      if (!trip) {
+        throw new NotFoundException('Trip not found.');
+      }
+      await this.assertTripAccess(trip, user);
 
-    const payment = await this.payments.findOne({ where: { tripId } });
-    if (!payment || payment.status !== PaymentStatusType.success) {
-      throw new BadRequestException('The trip has not been paid successfully.');
-    }
+      const existing = await invoices.findOne({ where: { tripId } });
+      if (existing) {
+        return {
+          message: 'Invoice was already issued.',
+          alreadyIssued: true,
+          invoice: existing.payload,
+        };
+      }
+      if (trip.status !== TripStatusType.completed) {
+        throw new BadRequestException('Only completed trips can be invoiced.');
+      }
 
-    const issuedAt = new Date();
-    const invoiceNumber = buildInvoiceNumber(tripId, issuedAt);
-    const payload = await this.buildInvoicePayload(trip, payment, {
-      invoiceNumber,
-      issuedAt,
-      recipientEmail: dto.recipientEmail ?? null,
-    });
-    const invoice = await this.invoices.save(
-      this.invoices.create({
+      const payment = await payments.findOne({ where: { tripId } });
+      if (!payment || payment.status !== PaymentStatusType.success) {
+        throw new BadRequestException('The trip has not been paid successfully.');
+      }
+
+      const issuedAt = new Date();
+      const invoiceNumber = buildInvoiceNumber(tripId, issuedAt);
+      const payload = await this.buildInvoicePayload(
+        trip,
+        payment,
+        {
+          invoiceNumber,
+          issuedAt,
+          recipientEmail: dto.recipientEmail ?? null,
+        },
+        manager,
+      );
+      const invoice = await invoices.save(invoices.create({
         tripId,
         invoiceNumber,
         recipientEmail: dto.recipientEmail ?? null,
         payload,
         issuedAt,
         emailedAt: null,
-      }),
-    );
+      }));
 
-    await this.auditLogs.save(
-      this.auditLogs.create({
+      await auditLogs.save(auditLogs.create({
         userType: this.auditUserType(user.role),
         userId: user.id,
         action: INVOICE_ACTION_ISSUED,
         metadata: { tripId, invoiceNumber },
-      }),
-    );
+      }));
 
-    return {
-      message: 'Invoice issued successfully.',
-      alreadyIssued: false,
-      invoice: invoice.payload,
-    };
+      return {
+        message: 'Invoice issued successfully.',
+        alreadyIssued: false,
+        invoice: invoice.payload,
+      };
+    });
   }
 
   async getInvoicePdf(tripId: number, user: AuthUser): Promise<{
@@ -213,21 +230,26 @@ export class InvoicesService {
       issuedAt: Date;
       recipientEmail: string | null;
     } | null,
+    manager?: EntityManager,
   ): Promise<InvoicePayload> {
+    const customers = manager?.getRepository(Customer) ?? this.customers;
+    const drivers = manager?.getRepository(Driver) ?? this.drivers;
+    const paymentMethods = manager?.getRepository(CustomerPaymentMethod)
+      ?? this.paymentMethods;
     const request = trip.rideRequest;
     const rate = Number(trip.exchangeRateVndToJpy);
     const { fareVnd, serviceFeeVnd } = splitFareAndServiceFee(
       trip.finalFareVnd,
       trip.rawFareVnd,
     );
-    const customer = await this.customers.findOne({
+    const customer = await customers.findOne({
       where: { customerId: request.customerId },
     });
-    const driver = await this.drivers.findOne({
+    const driver = await drivers.findOne({
       where: { driverId: trip.driverId },
     });
     const storedMethod = payment?.paymentMethodId
-      ? await this.paymentMethods.findOne({
+      ? await paymentMethods.findOne({
           where: { paymentMethodId: payment.paymentMethodId },
         })
       : null;

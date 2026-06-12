@@ -33,4 +33,10 @@ export class RideRequestDispatch {
 
   @Column({ name: 'responded_at', type: 'timestamptz', nullable: true })
   respondedAt: Date | null;
+
+  @Column({ name: 'expires_at', type: 'timestamptz', nullable: true })
+  expiresAt: Date | null;
+
+  @Column({ name: 'radius_km', type: 'int', nullable: true })
+  radiusKm: number | null;
 }

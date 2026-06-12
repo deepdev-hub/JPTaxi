@@ -14,7 +14,13 @@ import {
   uploadAvatar,
   uploadDriverDocument,
 } from '../api/accounts.js';
-import { getDriverPayouts, setDriverAvailability } from '../api/drivers.js';
+import {
+  getDriverInsurance,
+  getDriverPayouts,
+  setDriverAvailability,
+  updateDriverInsurance,
+} from '../api/drivers.js';
+import { updateDriverLocation } from '../api/rides.js';
 import { getDriverRatings, getDriverRatingsSummary, getPublicDriverRatingSummary } from '../api/ratings.js';
 import { changePassword } from '../api/auth.js';
 import {
@@ -24,6 +30,8 @@ import {
   profileText,
   setStoredProfileLanguage,
 } from '../i18n/profileLanguage.js';
+import { useI18n } from '../i18n/I18nProvider.jsx';
+import { translateApiError } from '../i18n/errors.js';
 import '../styles/app-pages.css';
 import { clearAuthSession } from '../utils/session.js';
 
@@ -75,13 +83,35 @@ const emptyDriver = {
   stats: null,
 };
 
+const emptyInsurance = {
+  providerName: '',
+  policyNumber: '',
+  effectiveDate: '',
+  expiryDate: '',
+  documentUrl: '',
+};
+
+function getCurrentPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Geolocation is unavailable'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => resolve({ lat: coords.latitude, lng: coords.longitude }),
+      reject,
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 5_000 },
+    );
+  });
+}
+
 function normalizeProfile(profile = {}) {
   const hasStats = profile.stats && typeof profile.stats === 'object';
   return {
     ...emptyDriver,
     ...profile,
     birthDate: profile.birthDate ? String(profile.birthDate).slice(0, 10) : emptyDriver.birthDate,
-    avatarUrl: resolveAssetUrl(profile.avatarUrl),
+    avatarUrl: profile.avatarUrl || '',
     vehicle: profile.vehicle || emptyDriver.vehicle,
     bankAccount: profile.bankAccount || emptyDriver.bankAccount,
     licenses: Array.isArray(profile.licenses) ? profile.licenses : [],
@@ -113,12 +143,14 @@ function formatDate(value, locale = 'ja-JP') {
   return new Date(value).toLocaleDateString(locale);
 }
 
-function formatTripStatus(status) {
-  return {
-    completed: '完了',
-    ongoing: '乗車中',
-    cancelled: 'キャンセル済み',
-  }[status] || status || '-';
+export function formatTripStatus(status, t) {
+  const translationKey = {
+    completed: 'trip.status.completed',
+    ongoing: 'trip.status.ongoing',
+    cancelled: 'trip.status.cancelled',
+    cancelled_by_admin: 'trip.status.cancelled',
+  }[status];
+  return translationKey ? t(translationKey) : status || '-';
 }
 
 const historyFilterLabels = {
@@ -176,6 +208,13 @@ function formatHistoryPlace(value, language = 'ja') {
   }
 
   return repaired;
+}
+
+function scoreLabel(score, t) {
+  if (score < 2) return t('review.needsImprovement');
+  if (score < 3.5) return t('review.average');
+  if (score < 4.5) return t('review.veryGood');
+  return t('review.excellent');
 }
 
 function formatEmailDisplayName(value) {
@@ -236,11 +275,13 @@ function summarizeRatings(items = []) {
 }
 
 export default function DriverInfoPage() {
+  const { formatNumber, t } = useI18n();
   const navigate = useNavigate();
   const { section } = useParams();
   const requestedSection = section === 'payment' ? 'payout' : section;
   const activeSection = driverMenu.some((item) => item.id === requestedSection) ? requestedSection : 'basic';
   const [online, setOnline] = useState(false);
+  const [availabilityBusy, setAvailabilityBusy] = useState(false);
   const [modal, setModal] = useState(null);
   const [profile, setProfile] = useState(emptyDriver);
   const [bankAccount, setBankAccount] = useState(emptyDriver.bankAccount);
@@ -257,6 +298,10 @@ export default function DriverInfoPage() {
   const [documentUploadError, setDocumentUploadError] = useState('');
   const [ratings, setRatings] = useState([]);
   const [ratingsSummary, setRatingsSummary] = useState({ averageScore: null, ratingCount: 0 });
+  const [insurance, setInsurance] = useState(emptyInsurance);
+  const [insuranceStatus, setInsuranceStatus] = useState('missing');
+  const [insuranceMessage, setInsuranceMessage] = useState('');
+  const [insuranceSaving, setInsuranceSaving] = useState(false);
   const [selectedHistory, setSelectedHistory] = useState(null);
   const [historyFilter, setHistoryFilter] = useState('all');
   const [historyDate, setHistoryDate] = useState('');
@@ -275,9 +320,10 @@ export default function DriverInfoPage() {
     async function loadProfile() {
       setLoading(true);
       try {
-        const [profileResult, payoutResult] = await Promise.all([
+        const [profileResult, payoutResult, insuranceResult] = await Promise.all([
           getDriverProfile(),
           getDriverPayouts(),
+          getDriverInsurance(),
         ]);
         const data = normalizeProfile(profileResult);
         if (!ignore) {
@@ -285,9 +331,11 @@ export default function DriverInfoPage() {
           setBankAccount(data.bankAccount);
           setOnline(Boolean(data.isOnline));
           setPayouts(payoutResult);
+          setInsurance(insuranceResult?.insurance || emptyInsurance);
+          setInsuranceStatus(insuranceResult?.status || 'missing');
         }
       } catch (error) {
-        if (!ignore) setStatus(error.message || text.status.driverLoadFailed);
+        if (!ignore) setStatus(translateApiError(error, t, text.status.driverLoadFailed));
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -351,9 +399,36 @@ export default function DriverInfoPage() {
     if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
   }, [avatarPreviewUrl]);
 
+  useEffect(() => {
+    if (!online || !navigator.geolocation) return undefined;
+    let lastSentAt = 0;
+    let lastPoint = null;
+    const watchId = navigator.geolocation.watchPosition(
+      ({ coords }) => {
+        const point = { lat: coords.latitude, lng: coords.longitude };
+        const moved = !lastPoint
+          || Math.abs(point.lat - lastPoint.lat) > 0.0001
+          || Math.abs(point.lng - lastPoint.lng) > 0.0001;
+        if (!moved && Date.now() - lastSentAt < 10_000) return;
+        lastPoint = point;
+        lastSentAt = Date.now();
+        updateDriverLocation(point).catch((error) => {
+          setStatus(translateApiError(
+            error,
+            t,
+            t('driverAvailability.locationUnavailable'),
+          ));
+        });
+      },
+      () => setStatus(t('driverAvailability.locationUnavailable')),
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 5_000 },
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [online, t]);
+
   const fullName = getDisplayName(profile, common.unregistered);
   const avatarInitial = fullName.slice(0, 1) || profile.lastName.slice(0, 1);
-  const avatar = profile.avatarUrl;
+  const avatar = resolveAssetUrl(profile.avatarUrl);
   const vehicle = profile.vehicle || emptyDriver.vehicle;
   const primaryLicense = profile.licenses[0] || {};
   const vehiclePhoto = resolveAssetUrl(profile.documents?.vehiclePhoto || vehicle.vehiclePhotoUrl);
@@ -398,6 +473,7 @@ export default function DriverInfoPage() {
     password: driverText.modal.password,
     bank: driverText.modal.bank,
     rating: `${driverText.ratingLabel} - ${common.details}`,
+    insurance: t('driverInsurance.title'),
     saved: driverText.modal.saved,
     error: driverText.modal.error,
   }[modal] || driverText.modal.detail;
@@ -411,13 +487,68 @@ export default function DriverInfoPage() {
   }
 
   async function updateAvailability(isOnline) {
-    const previous = online;
-    setOnline(isOnline);
+    if (availabilityBusy) return;
+    setAvailabilityBusy(true);
+    setStatus('');
+    let positionAcquired = !isOnline;
     try {
-      await setDriverAvailability(isOnline);
+      if (isOnline) {
+        const position = await getCurrentPosition();
+        positionAcquired = true;
+        await updateDriverLocation(position);
+      }
+      const result = await setDriverAvailability(isOnline);
+      setOnline(Boolean(result?.isOnline));
     } catch (error) {
-      setOnline(previous);
-      setStatus(error.message || 'Unable to update availability.');
+      setOnline(false);
+      if (!positionAcquired) {
+        setStatus(t('driverAvailability.locationUnavailable'));
+      } else {
+        setStatus(translateApiError(error, t, text.status.driverSaveFailed));
+      }
+    } finally {
+      setAvailabilityBusy(false);
+    }
+  }
+
+  function openInsurance() {
+    setInsuranceMessage('');
+    setModal('insurance');
+  }
+
+  function updateInsuranceField(field, value) {
+    setInsurance((current) => ({ ...current, [field]: value }));
+  }
+
+  async function handleInsuranceDocument(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setInsuranceMessage('');
+    try {
+      const url = await uploadDriverDocument('insurance', file);
+      updateInsuranceField('documentUrl', url);
+    } catch (error) {
+      setInsuranceMessage(translateApiError(error, t, text.status.avatarFailed));
+    }
+  }
+
+  async function saveInsurance() {
+    if (Object.values(insurance).some((value) => !String(value || '').trim())) {
+      setInsuranceMessage(t('driverInsurance.required'));
+      return;
+    }
+    setInsuranceSaving(true);
+    setInsuranceMessage('');
+    try {
+      const result = await updateDriverInsurance(insurance);
+      setInsurance(result.insurance);
+      setInsuranceStatus(result.status);
+      setInsuranceMessage(t('driverInsurance.saved'));
+    } catch (error) {
+      setInsuranceMessage(translateApiError(error, t, text.status.driverSaveFailed));
+    } finally {
+      setInsuranceSaving(false);
     }
   }
 
@@ -456,7 +587,7 @@ export default function DriverInfoPage() {
         setModal(null);
       }
     } catch (error) {
-      setStatus(error.message || text.status.avatarFailed);
+      setStatus(translateApiError(error, t, text.status.avatarFailed));
     } finally {
       setAvatarUploading(false);
     }
@@ -475,7 +606,7 @@ export default function DriverInfoPage() {
       setProfile(normalizeProfile(updated));
       setStatus(text.status.dbSaved);
     } catch (error) {
-      setDocumentUploadError(error.message || text.status.avatarFailed);
+      setDocumentUploadError(translateApiError(error, t, text.status.avatarFailed));
     } finally {
       setDocumentUploadingKey('');
     }
@@ -502,7 +633,7 @@ export default function DriverInfoPage() {
       setStatus(text.status.dbSaved);
     } catch (error) {
       setModal('error');
-      setStatus(error.message || text.status.driverSaveFailed);
+      setStatus(translateApiError(error, t, text.status.driverSaveFailed));
     }
   }
 
@@ -516,13 +647,13 @@ export default function DriverInfoPage() {
       setStatus(text.status.driverBankSaved);
     } catch (error) {
       setModal('error');
-      setStatus(error.message || text.status.driverBankFailed);
+      setStatus(translateApiError(error, t, text.status.driverBankFailed));
     }
   }
 
   async function savePassword() {
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setStatus('New password confirmation does not match.');
+      setStatus(t('profile.passwordMismatch'));
       return;
     }
     try {
@@ -534,7 +665,7 @@ export default function DriverInfoPage() {
       setModal(null);
       setStatus(text.status.dbSaved);
     } catch (error) {
-      setStatus(error.message || 'Unable to change password.');
+      setStatus(translateApiError(error, t, t('profile.passwordFailed')));
     }
   }
 
@@ -682,20 +813,20 @@ export default function DriverInfoPage() {
                 <strong>{driverText.bank}</strong>
                 <span>{bankAccount.bankName} **** {bankAccount.accountNumber.slice(-4)}</span>
               </button>
-            ) : <p className="empty-state">No bank account configured.</p>}
+            ) : <p className="empty-state">{t('driver.payout.noBank')}</p>}
             <article className="account-card">
-              <strong>Gross fare</strong>
-              <span>{Number(payouts.totals?.grossFareVnd || 0).toLocaleString('vi-VN')} VND</span>
+              <strong>{t('driver.payout.gross')}</strong>
+              <span>{formatNumber(Number(payouts.totals?.grossFareVnd || 0))} VND</span>
             </article>
             <article className="account-card">
-              <strong>Commission</strong>
-              <span>{Number(payouts.totals?.commissionVnd || 0).toLocaleString('vi-VN')} VND</span>
+              <strong>{t('driver.payout.commission')}</strong>
+              <span>{formatNumber(Number(payouts.totals?.commissionVnd || 0))} VND</span>
             </article>
             <article className="account-card">
-              <strong>Net payout</strong>
-              <span>{Number(payouts.totals?.netAmountVnd || 0).toLocaleString('vi-VN')} VND</span>
+              <strong>{t('driver.payout.net')}</strong>
+              <span>{formatNumber(Number(payouts.totals?.netAmountVnd || 0))} VND</span>
             </article>
-            {!payouts.items?.length ? <p className="empty-state">No payouts yet.</p> : null}
+            {!payouts.items?.length ? <p className="empty-state">{t('driver.payout.empty')}</p> : null}
             <button className="submit-button profile-save-button" type="button" onClick={() => setModal('bank')}>{common.edit}</button>
           </div>
         </section>
@@ -710,7 +841,7 @@ export default function DriverInfoPage() {
             <span>{text.user.displayLanguage}</span>
             <select value={language} onChange={(event) => changeLanguage(event.target.value)}>
               {languageOptions.map((option) => (
-                <option value={option.value} key={option.value}>{option.label}</option>
+                <option value={option.value} key={option.value}>{text.languageNames[option.value]}</option>
               ))}
             </select>
           </label>
@@ -736,7 +867,7 @@ export default function DriverInfoPage() {
               <strong>{online ? driverText.online : driverText.offline}</strong>
               <small>{online ? driverText.onlineCopy : driverText.offlineCopy}</small>
             </span>
-            <span className="switch"><input type="checkbox" checked={online} onChange={(event) => updateAvailability(event.target.checked)} /><span></span></span>
+            <span className="switch"><input type="checkbox" checked={online} disabled={availabilityBusy} onChange={(event) => updateAvailability(event.target.checked)} /><span></span></span>
           </label>
 
           <section className="panel zip-profile-panel driver-basic-card">
@@ -781,7 +912,7 @@ export default function DriverInfoPage() {
             <div className="doc-list">
               <button type="button" onClick={() => setModal('license')}>🪪 {driverText.license} <strong>{profile.licenses.length ? common.approved : common.unregistered}</strong></button>
               <button type="button" onClick={() => setModal('vehicle')}>📘 {driverText.inspection} <strong>{common.approved}</strong></button>
-              <button className="warning" type="button" onClick={() => setModal('insurance')}>📋 {driverText.insurance} <strong>{driverText.updateRequired}</strong></button>
+              <button className={insuranceStatus === 'active' ? '' : 'warning'} type="button" onClick={openInsurance}>📋 {driverText.insurance} <strong>{t(`driverInsurance.${insuranceStatus}`)}</strong></button>
             </div>
           </section>
 
@@ -808,7 +939,7 @@ export default function DriverInfoPage() {
     <PageShell withFooter={false}>
       <main className="app-screen zip-profile-screen">
         <div className="profile-window">
-          <Topbar brandTo="/driver-home" brandExtra="for Driver" actions={<><Link to="/driver-home">{common.home}</Link><Link to="/messages/customer">{common.messages}</Link>{avatar ? <img className="topbar-avatar driver-avatar-top" src={avatar} alt="" /> : <span className="topbar-avatar driver-avatar-top" />}</>} />
+          <Topbar brandTo="/driver-home" brandExtra={t('brand.forDriver')} actions={<><Link to="/driver-home">{common.home}</Link><Link to="/messages/customer">{common.messages}</Link>{avatar ? <img className="topbar-avatar driver-avatar-top" src={avatar} alt="" /> : <span className="topbar-avatar driver-avatar-top" />}</>} />
           <section className="profile-page-shell zip-profile-shell">
             <aside className="profile-sidebar">
               <section className="profile-card zip-profile-card driver-profile-card">
@@ -942,8 +1073,36 @@ export default function DriverInfoPage() {
             <div className="modal-form zip-modal-form">
               <label><span>{driverText.modal.currentPassword}</span><input type="password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, currentPassword: event.target.value }))} /></label>
               <label><span>{driverText.modal.newPassword}</span><input type="password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))} /></label>
-              <label><span>Confirm new password</span><input type="password" value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))} /></label>
+              <label><span>{t('auth.confirmNewPassword')}</span><input type="password" value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))} /></label>
               <button className="submit-button profile-save-button" type="button" onClick={savePassword}>{common.save}</button>
+            </div>
+          )}
+          {modal === 'insurance' && (
+            <div className="modal-form zip-modal-form">
+              <label>
+                <span>{t('driverInsurance.provider')}</span>
+                <input aria-label={t('driverInsurance.provider')} value={insurance.providerName} onChange={(event) => updateInsuranceField('providerName', event.target.value)} />
+              </label>
+              <label>
+                <span>{t('driverInsurance.policyNumber')}</span>
+                <input value={insurance.policyNumber} onChange={(event) => updateInsuranceField('policyNumber', event.target.value)} />
+              </label>
+              <div className="form-grid">
+                <label><span>{t('driverInsurance.effectiveDate')}</span><input type="date" value={insurance.effectiveDate} onChange={(event) => updateInsuranceField('effectiveDate', event.target.value)} /></label>
+                <label><span>{t('driverInsurance.expiryDate')}</span><input type="date" value={insurance.expiryDate} onChange={(event) => updateInsuranceField('expiryDate', event.target.value)} /></label>
+              </div>
+              <label className="avatar-file-picker">
+                <span className="avatar-file-icon">📋</span>
+                <span className="avatar-file-copy">
+                  <strong>{t('driverInsurance.document')}</strong>
+                  <small>{insurance.documentUrl || common.imageFile}</small>
+                </span>
+                <input type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={handleInsuranceDocument} />
+              </label>
+              {insuranceMessage && <p className="form-status show">{insuranceMessage}</p>}
+              <button className="submit-button profile-save-button" type="button" disabled={insuranceSaving} onClick={saveInsurance}>
+                {insuranceSaving ? common.uploading : common.save}
+              </button>
             </div>
           )}
           {modal === 'rating' && selectedHistory && (
@@ -951,7 +1110,7 @@ export default function DriverInfoPage() {
               <div className="driver-rating-score">
                 <div>
                   <strong>{selectedHistory.rating ? Number(selectedHistory.rating.score).toFixed(1) : '-'}</strong>
-                  <small>{selectedHistory.rating?.scoreLabelJa || '評価はまだありません'}</small>
+                  <small>{selectedHistory.rating ? scoreLabel(Number(selectedHistory.rating.score), t) : t('driverHistory.noRating')}</small>
                 </div>
               </div>
               <div className="driver-rating-stars" aria-label={`${selectedHistory.rating?.score || 0} stars`}>
@@ -963,41 +1122,41 @@ export default function DriverInfoPage() {
               <section className="driver-rating-trip-card">
                 <div className="driver-rating-trip-heading">
                   <span>Trip #{selectedHistory.trip.tripId}</span>
-                  <em>{formatTripStatus(selectedHistory.trip.status)}</em>
+                  <em>{formatTripStatus(selectedHistory.trip.status, t)}</em>
                 </div>
                 <div className="driver-rating-route">
                   <article>
                     <span className="point-dot pickup"></span>
-                    <div><small>出発地</small><strong>{formatHistoryPlace(selectedHistory.trip.pickupAddress, language)}</strong></div>
+                    <div><small>{t('booking.departure')}</small><strong>{formatHistoryPlace(selectedHistory.trip.pickupAddress, language)}</strong></div>
                   </article>
                   <article>
                     <span className="point-dot destination"></span>
-                    <div><small>目的地</small><strong>{formatHistoryPlace(selectedHistory.trip.dropoffAddress, language)}</strong></div>
+                    <div><small>{t('location.destination')}</small><strong>{formatHistoryPlace(selectedHistory.trip.dropoffAddress, language)}</strong></div>
                   </article>
                 </div>
                 <div className="driver-rating-trip-facts">
-                  <article><span>乗車日</span><strong>{formatDate(selectedHistory.trip.startTime, text.locale)}</strong></article>
-                  <article><span>走行距離</span><strong>{Number(selectedHistory.trip.distanceKm || 0).toFixed(1)} km</strong></article>
-                  <article><span>料金</span><strong>{formatCurrency(selectedHistory.trip.finalFareJpy)}</strong></article>
+                  <article><span>{t('driverHistory.tripDate')}</span><strong>{formatDate(selectedHistory.trip.startTime, text.locale)}</strong></article>
+                  <article><span>{t('location.distance')}</span><strong>{Number(selectedHistory.trip.distanceKm || 0).toFixed(1)} km</strong></article>
+                  <article><span>{t('driverHistory.fare')}</span><strong>{formatCurrency(selectedHistory.trip.finalFareJpy)}</strong></article>
                 </div>
               </section>
               <dl>
-                <div><dt>お客様</dt><dd>{selectedHistory.rating?.customerName || '-'}</dd></div>
-                <div><dt>評価日</dt><dd>{selectedHistory.rating ? formatDate(selectedHistory.rating.createdAt, text.locale) : '-'}</dd></div>
+                <div><dt>{t('driverHistory.customer')}</dt><dd>{selectedHistory.rating?.customerName || '-'}</dd></div>
+                <div><dt>{t('driverHistory.ratingDate')}</dt><dd>{selectedHistory.rating ? formatDate(selectedHistory.rating.createdAt, text.locale) : '-'}</dd></div>
               </dl>
               <section className="driver-rating-feedback">
-                <strong>良かった点</strong>
+                <strong>{t('driverHistory.goodPoints')}</strong>
                 {selectedHistory.rating?.tags?.length
                   ? <div className="driver-rating-tags">{selectedHistory.rating.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
-                  : <small>選択された項目はありません。</small>}
+                  : <small>{t('driverHistory.noTags')}</small>}
               </section>
               <section className="driver-rating-feedback">
-                <strong>お客様からのコメント</strong>
-                <p className="driver-rating-comment">{selectedHistory.rating?.comment || 'お客様からのコメントはまだありません。'}</p>
+                <strong>{t('driverHistory.comment')}</strong>
+                <p className="driver-rating-comment">{selectedHistory.rating?.comment || t('driverHistory.noComment')}</p>
               </section>
             </div>
           )}
-          {modal && !['account', 'avatar', 'vehicle', 'bank', 'password', 'rating'].includes(modal) && <p className="modal-copy">{status || driverText.modal.defaultCopy}</p>}
+          {modal && !['account', 'avatar', 'vehicle', 'bank', 'password', 'rating', 'insurance'].includes(modal) && <p className="modal-copy">{driverText.modal.defaultCopy}</p>}
         </Modal>
       </main>
     </PageShell>

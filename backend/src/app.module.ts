@@ -27,6 +27,8 @@ import { CustomerNotificationPreference } from './entities/customer-notification
 import { CustomerPaymentMethod } from './entities/customer-payment-method.entity';
 import { PasswordResetToken } from './entities/password-reset-token.entity';
 import { Invoice } from './entities/invoice.entity';
+import { RideSearchDriverExclusion } from './entities/ride-search-driver-exclusion.entity';
+import { DriverInsurance } from './entities/driver-insurance.entity';
 import { AuthModule } from './modules/auth/auth.module';
 import { RideModule } from './modules/ride/ride.module';
 import { AdminModule } from './modules/admin/admin.module';
@@ -39,6 +41,7 @@ import { MessagesModule } from './modules/messages/messages.module';
 import { MailModule } from './modules/mail/mail.module';
 import { MapModule } from './modules/map/map.module';
 import { validateEnvironment } from './config/environment';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -50,6 +53,7 @@ import { validateEnvironment } from './config/environment';
         join(__dirname, '..', '.env.local'),
       ],
     }),
+    ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -80,9 +84,11 @@ import { validateEnvironment } from './config/environment';
           CustomerPaymentMethod,
           PasswordResetToken,
           Invoice,
+          RideSearchDriverExclusion,
+          DriverInsurance,
         ];
         const databaseUrl = config.getOrThrow<string>('DATABASE_URL');
-        const sslEnabled = config.get<string>('DB_SSL') === 'true';
+        const sslEnabled = config.get<boolean>('DB_SSL') === true;
         const ssl = sslEnabled ? { rejectUnauthorized: false } : undefined;
 
         return {
@@ -92,6 +98,18 @@ import { validateEnvironment } from './config/environment';
           synchronize: false,
           logging: false,
           ssl,
+          extra: {
+            max: config.get<number>('DB_POOL_MAX', 3),
+            min: config.get<number>('DB_POOL_MIN', 1),
+            connectionTimeoutMillis: config.get<number>(
+              'DB_CONNECTION_TIMEOUT_MS',
+              30_000,
+            ),
+            idleTimeoutMillis: config.get<number>('DB_IDLE_TIMEOUT_MS', 600_000),
+            maxLifetimeSeconds: Math.ceil(
+              config.get<number>('DB_MAX_LIFETIME_MS', 1_800_000) / 1000,
+            ),
+          },
         };
       },
     }),

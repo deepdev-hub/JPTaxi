@@ -14,11 +14,12 @@ import LoginPage from '../pages/LoginPage.jsx';
 import MessagesPage from '../pages/MessagesPage.jsx';
 import PaymentPage from '../pages/PaymentPage.jsx';
 import RegisterPage from '../pages/RegisterPage.jsx';
+import ReservationSummaryPage from '../pages/ReservationSummaryPage.jsx';
 import RideConfirmPage from '../pages/RideConfirmPage.jsx';
 import RideStatusPage from '../pages/RideStatusPage.jsx';
 import SearchCarPage from '../pages/SearchCarPage.jsx';
 import UserInfoPage from '../pages/UserInfoPage.jsx';
-import RuntimePageTranslator from '../i18n/RuntimePageTranslator.jsx';
+import { I18nProvider } from '../i18n/I18nProvider.jsx';
 import ActiveRideNavigationGuard from '../components/ActiveRideNavigationGuard.jsx';
 import { getAuthRole, getAuthToken } from '../utils/session.js';
 
@@ -57,8 +58,7 @@ function RoleHomeRedirect() {
 
 export default function App() {
   return (
-    <>
-      <RuntimePageTranslator />
+    <I18nProvider>
       <ActiveRideNavigationGuard>
         <Routes>
           <Route path="/" element={<RoleHomeRedirect />} />
@@ -85,6 +85,7 @@ export default function App() {
           <Route path="/driver-info/:section" element={<ProtectedRoute role="driver"><DriverInfoPage /></ProtectedRoute>} />
           <Route path="/driver_info.html" element={<Navigate to="/driver-info" replace />} />
           <Route path="/bill-confirm" element={<ProtectedRoute role="customer"><BillConfirmPage /></ProtectedRoute>} />
+          <Route path="/reservation-summary" element={<ProtectedRoute role="customer"><ReservationSummaryPage /></ProtectedRoute>} />
           <Route path="/bill_confirm.html" element={<Navigate to="/bill-confirm" replace />} />
           <Route path="/xacnhandatxe.html" element={<Navigate to="/bill-confirm" replace />} />
           <Route path="/search-car" element={<ProtectedRoute role="customer"><SearchCarPage /></ProtectedRoute>} />
@@ -105,6 +106,6 @@ export default function App() {
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </ActiveRideNavigationGuard>
-    </>
+    </I18nProvider>
   );
 }

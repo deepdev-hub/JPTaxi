@@ -5,6 +5,9 @@ export enum PaymentMethodEnum {
   MASTER = 'MASTER',
   JCB = 'JCB',
   VNPAY = 'VNPAY',
+  CASH = 'CASH',
+  PAYPAY = 'PAYPAY',
+  APPLE_PAY = 'APPLE_PAY',
 }
 
 export enum PaymentStatusType {

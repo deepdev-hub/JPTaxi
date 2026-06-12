@@ -11,18 +11,20 @@ import {
 } from '../api/auth.js';
 import { emailPattern } from '../utils/loginValidation.js';
 import { clearAuthSession, persistAuthSession } from '../utils/session.js';
+import { useI18n } from '../i18n/I18nProvider.jsx';
+import { translateApiError } from '../i18n/errors.js';
 import '../styles/auth.css';
-
-const loginMessages = {
-  emailRequired: 'メールアドレスを入力してください。',
-  emailInvalid: '正しいメールアドレス形式で入力してください。',
-  passwordRequired: 'パスワードを入力してください。',
-  passwordShort: 'パスワードは6文字以上で入力してください。',
-  success: 'ログイン情報を確認しました。',
-};
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const { t } = useI18n();
+  const loginMessages = {
+    emailRequired: t('auth.emailRequired'),
+    emailInvalid: t('auth.emailInvalid'),
+    passwordRequired: t('auth.passwordRequired'),
+    passwordShort: t('auth.passwordShort'),
+    success: t('auth.loginSuccess'),
+  };
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
   const [loginRole, setLoginRole] = useState('customer');
@@ -143,7 +145,7 @@ export default function LoginPage() {
       navigate(role === 'driver' ? '/driver-home' : '/home');
     } catch (error) {
       clearAuthSession();
-      setStatus(error.message || 'ログインできませんでした。');
+      setStatus(translateApiError(error, t, t('auth.loginFailed')));
     }
   }
 
@@ -165,7 +167,7 @@ export default function LoginPage() {
 
     if (forgotStep === 'code') {
       if (!forgotCode.trim()) {
-        setForgotError('確認コードを入力してください。');
+        setForgotError(t('auth.codeRequired'));
         return;
       }
 
@@ -175,12 +177,12 @@ export default function LoginPage() {
 
     if (forgotStep === 'password') {
       if (newPassword.length < 6) {
-        setForgotError('パスワードは6文字以上で入力してください。');
+        setForgotError(t('auth.passwordShort'));
         return;
       }
 
       if (newPassword !== confirmPassword) {
-        setForgotError('確認用パスワードが一致しません。');
+        setForgotError(t('auth.passwordMismatch'));
         return;
       }
 
@@ -190,10 +192,10 @@ export default function LoginPage() {
           code: forgotCode.trim(),
           newPassword,
         });
-        setForgotStatus('新しいパスワードを設定しました。');
+        setForgotStatus(t('auth.passwordUpdated'));
         window.setTimeout(() => setForgotOpen(false), 1000);
       } catch (error) {
-        setForgotError(error.message || 'パスワードを更新できませんでした。');
+        setForgotError(translateApiError(error, t, t('auth.passwordUpdateFailed')));
       }
       return;
     }
@@ -213,9 +215,9 @@ export default function LoginPage() {
     try {
       await forgotPassword(trimmedEmail);
       setForgotStep('code');
-      setForgotStatus('確認コードを送信しました。');
+      setForgotStatus(t('auth.codeSent'));
     } catch (error) {
-      setForgotError(error.message || '確認コードを送信できませんでした。');
+      setForgotError(translateApiError(error, t, t('auth.codeSendFailed')));
     }
   }
 
@@ -226,22 +228,22 @@ export default function LoginPage() {
 
         <section className="auth-layout">
           <div className="intro">
-            <span className="eyebrow">🚕 日本語対応タクシーサービス</span>
-            <h1>安心・簡単にJP TAXIへログイン</h1>
-            <p>日本語でタクシーを予約し、移動履歴、メッセージ、アカウント情報をまとめて管理できます。</p>
+            <span className="eyebrow">🚕 {t('auth.eyebrow')}</span>
+            <h1>{t('auth.loginHero')}</h1>
+            <p>{t('auth.loginHeroCopy')}</p>
 
-            <div className="benefits" aria-label="サービスの特徴">
+            <div className="benefits" aria-label={t('auth.features')}>
               <article>
-                <h2>日本語対応</h2>
-                <p>日本人利用者にも分かりやすいUIで安心して利用できます。</p>
+                <h2>{t('auth.languageSupport')}</h2>
+                <p>{t('auth.languageSupportCopy')}</p>
               </article>
               <article>
-                <h2>簡単予約</h2>
-                <p>目的地の検索から配車確認まで、スムーズに進められます。</p>
+                <h2>{t('auth.easyBooking')}</h2>
+                <p>{t('auth.easyBookingCopy')}</p>
               </article>
               <article>
-                <h2>安全な連絡</h2>
-                <p>アプリ内メッセージ機能でドライバーと直接連絡できます。</p>
+                <h2>{t('auth.safeContact')}</h2>
+                <p>{t('auth.safeContactCopy')}</p>
               </article>
             </div>
           </div>
@@ -249,12 +251,12 @@ export default function LoginPage() {
           <section className="auth-card" aria-labelledby="login-title">
             <div className="form-logo" aria-hidden="true">🚕</div>
             <div className="form-heading">
-              <h2 id="login-title">{loginRole === 'driver' ? 'ドライバーログイン' : 'お客様ログイン'}</h2>
-              <p>{loginRole === 'driver' ? '配車リクエストを受け取るドライバーアカウントでログインしてください。' : '予約を行うお客様アカウントでログインしてください。'}</p>
+              <h2 id="login-title">{loginRole === 'driver' ? t('auth.driverLogin') : t('auth.customerLogin')}</h2>
+              <p>{loginRole === 'driver' ? t('auth.driverLoginCopy') : t('auth.customerLoginCopy')}</p>
             </div>
 
             <form className="auth-form" onSubmit={handleSubmit} noValidate>
-              <div className="login-role-switch" role="tablist" aria-label="ログインするアカウントの種類">
+              <div className="login-role-switch" role="tablist" aria-label={t('auth.accountType')}>
                 <button
                   className={loginRole === 'customer' ? 'active' : ''}
                   type="button"
@@ -265,7 +267,7 @@ export default function LoginPage() {
                     setStatus('');
                   }}
                 >
-                  お客様
+                  {t('common.customer')}
                 </button>
                 <button
                   className={loginRole === 'driver' ? 'active' : ''}
@@ -277,12 +279,12 @@ export default function LoginPage() {
                     setStatus('');
                   }}
                 >
-                  ドライバー
+                  {t('common.driver')}
                 </button>
               </div>
 
               <label>
-                <span>メールアドレス</span>
+                <span>{t('common.email')}</span>
                 <input
                   ref={emailRef}
                   id="emailInput"
@@ -301,8 +303,8 @@ export default function LoginPage() {
               </label>
 
               <PasswordField
-                label="パスワード"
-                placeholder="パスワードを入力"
+                label={t('common.password')}
+                placeholder={t('common.password')}
                 value={password}
                 onChange={handlePasswordChange}
                 error={errors.password}
@@ -317,10 +319,10 @@ export default function LoginPage() {
                     checked={remember}
                     onChange={(event) => setRemember(event.target.checked)}
                   />
-                  <span>ログイン状態を保持する</span>
+                  <span>{t('auth.remember')}</span>
                 </label>
                 <button className="forgot-button" type="button" onClick={openForgotModal}>
-                  パスワードを忘れた場合
+                  {t('auth.forgot')}
                 </button>
               </div>
 
@@ -328,14 +330,14 @@ export default function LoginPage() {
                 {status}
               </div>
 
-              <button className="submit-button" type="submit">ログインする</button>
+              <button className="submit-button" type="submit">{t('auth.login')}</button>
               <div className="login-register-links">
                 {loginRole === 'driver' ? (
-                  <p className="note-link">ドライバーアカウントをお持ちでないですか？ <Link to="/driver-register">運転者登録</Link></p>
+                  <p className="note-link">{t('auth.noDriverAccount')} <Link to="/driver-register">{t('auth.driverRegister')}</Link></p>
                 ) : (
                   <>
-                    <p className="note-link">アカウントをお持ちでないですか？ <Link to="/register">顧客登録</Link></p>
-                    <p className="note-link driver-register-entry">ドライバーとして働きますか？ <Link className="driver-register-link" to="/driver-register">運転者登録</Link></p>
+                    <p className="note-link">{t('auth.noCustomerAccount')} <Link to="/register">{t('auth.customerRegister')}</Link></p>
+                    <p className="note-link driver-register-entry">{t('auth.workAsDriver')} <Link className="driver-register-link" to="/driver-register">{t('auth.driverRegister')}</Link></p>
                   </>
                 )}
               </div>
@@ -343,16 +345,16 @@ export default function LoginPage() {
           </section>
         </section>
 
-        <Modal open={forgotOpen} title="パスワード再設定" onClose={() => setForgotOpen(false)}>
+        <Modal open={forgotOpen} title={t('auth.resetTitle')} onClose={() => setForgotOpen(false)}>
           <p className="modal-copy">
-            {forgotStep === 'email' && '登録済みのメールアドレスを入力してください。確認コードを送信します。'}
-            {forgotStep === 'code' && 'メールに届いた確認コードを入力してください。'}
-            {forgotStep === 'password' && '新しいパスワードを入力してください。'}
+            {forgotStep === 'email' && t('auth.resetEmailCopy')}
+            {forgotStep === 'code' && t('auth.resetCodeCopy')}
+            {forgotStep === 'password' && t('auth.resetPasswordCopy')}
           </p>
           <form className="auth-form" onSubmit={handleForgotSubmit} noValidate>
             {forgotStep === 'email' && (
               <label>
-                <span>メールアドレス</span>
+                <span>{t('common.email')}</span>
                 <input
                   type="email"
                   className={forgotError ? 'input-error' : ''}
@@ -371,7 +373,7 @@ export default function LoginPage() {
 
             {forgotStep === 'code' && (
               <label>
-                <span>確認コード</span>
+                <span>{t('auth.code')}</span>
                 <input
                   className={forgotError ? 'input-error' : ''}
                   inputMode="numeric"
@@ -389,8 +391,8 @@ export default function LoginPage() {
             {forgotStep === 'password' && (
               <>
                 <PasswordField
-                  label="新しいパスワード"
-                  placeholder="新しいパスワード"
+                  label={t('auth.newPassword')}
+                  placeholder={t('auth.newPassword')}
                   value={newPassword}
                   onChange={(event) => {
                     setNewPassword(event.target.value);
@@ -398,8 +400,8 @@ export default function LoginPage() {
                   }}
                 />
                 <PasswordField
-                  label="新しいパスワード確認"
-                  placeholder="もう一度入力"
+                  label={t('auth.confirmNewPassword')}
+                  placeholder={t('auth.confirmNewPassword')}
                   value={confirmPassword}
                   onChange={(event) => {
                     setConfirmPassword(event.target.value);
@@ -413,9 +415,9 @@ export default function LoginPage() {
               {forgotStatus}
             </div>
             <button className="submit-button" type="submit">
-              {forgotStep === 'email' && 'コードを送信する'}
-              {forgotStep === 'code' && 'コードを確認する'}
-              {forgotStep === 'password' && 'パスワードを更新する'}
+              {forgotStep === 'email' && t('auth.sendCode')}
+              {forgotStep === 'code' && t('auth.verifyCode')}
+              {forgotStep === 'password' && t('auth.updatePassword')}
             </button>
           </form>
         </Modal>

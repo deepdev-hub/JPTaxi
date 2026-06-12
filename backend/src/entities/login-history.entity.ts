@@ -24,6 +24,9 @@ export class LoginHistory {
   @Column({ name: 'ip_address', type: 'varchar', length: 45, nullable: true })
   ipAddress: string | null;
 
+  @Column({ name: 'user_agent', type: 'varchar', length: 512, nullable: true })
+  userAgent: string | null;
+
   @Column({ name: 'login_time', type: 'timestamptz' })
   loginTime: Date;
 }

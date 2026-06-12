@@ -1,4 +1,7 @@
+import { useI18n } from '../i18n/I18nProvider.jsx';
+
 export default function Modal({ open, title, children, onClose, className = '' }) {
+  const { t } = useI18n();
   if (!open) return null;
 
   return (
@@ -12,7 +15,7 @@ export default function Modal({ open, title, children, onClose, className = '' }
       >
         <div className="modal-header">
           <h2 id="modal-title">{title}</h2>
-          <button className="modal-close" type="button" aria-label="閉じる" onClick={onClose}>
+          <button className="modal-close" type="button" aria-label={t('common.close')} onClick={onClose}>
             ×
           </button>
         </div>

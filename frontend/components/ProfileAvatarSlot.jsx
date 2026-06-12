@@ -17,6 +17,7 @@ export default function ProfileAvatarSlot({
   className = '',
   slot = '1',
 }) {
+  const { t } = useI18n();
   const fallback = fallbackText.trim().charAt(0) || '?';
   const slotClass = SLOT_CLASS[slot] ?? SLOT_CLASS['1'];
 
@@ -24,7 +25,7 @@ export default function ProfileAvatarSlot({
     <div
       className={`profile-avatar ${slotClass} ${className}`.trim()}
       role={src ? 'img' : undefined}
-      aria-label={src ? 'プロフィール画像' : undefined}
+      aria-label={src ? t('profile.image') : undefined}
     >
       {src ? (
         <img key={src} src={src} alt="" />
@@ -54,3 +55,4 @@ export default function ProfileAvatarSlot({
 
   return inner;
 }
+import { useI18n } from '../i18n/I18nProvider.jsx';

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   addSearchHistory,
@@ -6,30 +6,17 @@ import {
   getSavedPlaces,
   getSearchHistory,
 } from '../api/customers.js';
+import { getCustomerProfile, resolveAssetUrl } from '../api/accounts.js';
 import { geocodePlaces, reverseGeocode } from '../api/maps.js';
 import { estimateRide } from '../api/rides.js';
 import InteractiveRouteMap from '../components/InteractiveRouteMap.jsx';
 import PageShell from '../components/PageShell.jsx';
+import ProfileAvatarSlot from '../components/ProfileAvatarSlot.jsx';
 import Topbar from '../components/Topbar.jsx';
+import { normalizePlace } from '../utils/place.js';
 import { formatDistance, formatDuration } from '../utils/routePlanner.js';
+import { useI18n } from '../i18n/I18nProvider.jsx';
 import '../styles/app-pages.css';
-
-function toPlace(result) {
-  const metadata = result?.metadata ?? {};
-  const latitude = Number(result?.lat ?? result?.latitude ?? metadata.latitude);
-  const longitude = Number(result?.lon ?? result?.longitude ?? metadata.longitude);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  const parts = String(result.display_name ?? result.address ?? metadata.address ?? '')
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean);
-  return {
-    id: result.place_id ?? result.savedPlaceId ?? `${latitude}:${longitude}`,
-    name: result.label || result.name || metadata.name || result.searchText || parts[0] || 'Selected place',
-    address: result.address || result.display_name || metadata.address || parts.slice(1).join(', '),
-    position: [latitude, longitude],
-  };
-}
 
 function getBrowserPosition() {
   return new Promise((resolve, reject) => {
@@ -47,64 +34,86 @@ function getBrowserPosition() {
 
 export default function LocationSearchPage() {
   const navigate = useNavigate();
+  const { formatNumber, locale, t } = useI18n();
   const [pickup, setPickup] = useState(null);
   const [destination, setDestination] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [savedPlaces, setSavedPlaces] = useState([]);
   const [recentPlaces, setRecentPlaces] = useState([]);
+  const [pickupQuery, setPickupQuery] = useState('');
   const [query, setQuery] = useState('');
+  const [activeSearchTarget, setActiveSearchTarget] = useState('destination');
   const [suggestions, setSuggestions] = useState([]);
   const [routePath, setRoutePath] = useState([]);
   const [routeMetrics, setRouteMetrics] = useState(null);
   const [status, setStatus] = useState('');
   const [searching, setSearching] = useState(false);
   const [routing, setRouting] = useState(false);
+  const skipNextSearchRef = useRef(false);
 
   useEffect(() => {
     let ignored = false;
-    Promise.allSettled([getSavedPlaces(), getSearchHistory(), getBrowserPosition()])
-      .then(async ([placesResult, historyResult, positionResult]) => {
+    Promise.allSettled([
+      getSavedPlaces(),
+      getSearchHistory(),
+      getBrowserPosition(),
+      getCustomerProfile(),
+    ])
+      .then(async ([placesResult, historyResult, positionResult, profileResult]) => {
         if (ignored) return;
         if (placesResult.status === 'fulfilled') {
           setSavedPlaces(
-            placesResult.value.map(toPlace).filter(Boolean),
+            placesResult.value.map(normalizePlace).filter(Boolean),
           );
         }
         if (historyResult.status === 'fulfilled') {
-          setRecentPlaces(historyResult.value.map(toPlace).filter(Boolean));
+          setRecentPlaces(historyResult.value.map(normalizePlace).filter(Boolean));
+        }
+        if (profileResult.status === 'fulfilled') {
+          setProfile(profileResult.value);
         }
         if (positionResult.status === 'fulfilled') {
           const position = positionResult.value;
           try {
             const reverse = await reverseGeocode(position[0], position[1]);
             if (!ignored) {
-              setPickup({
-                ...toPlace(reverse),
+              const currentPlace = {
+                ...normalizePlace(reverse),
                 id: 'current-location',
-                name: 'Current location',
+                name: t('location.currentName'),
                 position,
-              });
+              };
+              setPickup(currentPlace);
+              setPickupQuery(currentPlace.address || currentPlace.name);
             }
           } catch {
             if (!ignored) {
-              setPickup({
+              const currentPlace = {
                 id: 'current-location',
-                name: 'Current location',
+                name: t('location.currentName'),
                 address: `${position[0].toFixed(5)}, ${position[1].toFixed(5)}`,
                 position,
-              });
+              };
+              setPickup(currentPlace);
+              setPickupQuery(currentPlace.address);
             }
           }
         } else {
-          setStatus(positionResult.reason?.message || 'Pickup location is unavailable.');
+          setStatus(t('location.positionUnavailable'));
         }
       });
     return () => {
       ignored = true;
     };
-  }, []);
+  }, [t]);
 
   useEffect(() => {
-    const text = query.trim();
+    const text = (activeSearchTarget === 'pickup' ? pickupQuery : query).trim();
+    if (skipNextSearchRef.current) {
+      skipNextSearchRef.current = false;
+      setSuggestions([]);
+      return undefined;
+    }
     if (text.length < 2) {
       setSuggestions([]);
       return undefined;
@@ -114,14 +123,14 @@ export default function LocationSearchPage() {
       setSearching(true);
       geocodePlaces(text, { signal: controller.signal })
         .then((items) => {
-          const next = items.map(toPlace).filter(Boolean);
+          const next = items.map(normalizePlace).filter(Boolean);
           setSuggestions(next);
-          setStatus(next.length ? '' : 'No matching places found.');
+          setStatus(next.length ? '' : t('location.noMatch'));
         })
         .catch((error) => {
           if (error.name !== 'AbortError') {
             setSuggestions([]);
-            setStatus(error.message || 'Location search failed.');
+            setStatus(t('location.searchFailed'));
           }
         })
         .finally(() => setSearching(false));
@@ -130,61 +139,98 @@ export default function LocationSearchPage() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query]);
+  }, [activeSearchTarget, pickupQuery, query, t]);
 
-  async function selectDestination(place) {
-    setDestination(place);
-    setQuery(place.name);
+  async function selectPlace(place, target = activeSearchTarget) {
+    const nextPickup = target === 'pickup' ? place : pickup;
+    const nextDestination = target === 'destination' ? place : destination;
+
+    skipNextSearchRef.current = true;
+    if (target === 'pickup') {
+      setPickup(place);
+      setPickupQuery(place.address || place.name);
+    } else {
+      setDestination(place);
+      setQuery(place.name);
+    }
     setSuggestions([]);
     setStatus('');
     setRoutePath([]);
     setRouteMetrics(null);
-    if (!pickup) {
-      setStatus('Pickup location is unavailable.');
+    if (!nextPickup || !nextDestination) {
       return;
     }
     setRouting(true);
     try {
       const route = await estimateRide({
-        startLat: pickup.position[0],
-        startLng: pickup.position[1],
-        endLat: place.position[0],
-        endLng: place.position[1],
+        startLat: nextPickup.position[0],
+        startLng: nextPickup.position[1],
+        endLat: nextDestination.position[0],
+        endLng: nextDestination.position[1],
         vehicleType: '4',
       });
       setRoutePath(route.path);
       setRouteMetrics({
         distance: formatDistance(route.distanceMeters),
-        duration: formatDuration(route.durationSeconds, route.distanceMeters),
-        fare: `${new Intl.NumberFormat('vi-VN').format(route.fareVnd)} VND`,
+        duration: formatDuration(route.durationSeconds, route.distanceMeters, locale),
+        fare: `${formatNumber(route.fareVnd)} VND`,
         distanceMeters: route.distanceMeters,
         durationSeconds: route.durationSeconds,
       });
-      addSearchHistory({
-        searchText: query.trim() || place.name,
-        name: place.name,
-        address: place.address,
-        latitude: place.position[0],
-        longitude: place.position[1],
-      }).then((savedHistory) => {
-        const recent = toPlace(savedHistory);
-        if (recent) {
-          setRecentPlaces((items) => [
-            recent,
-            ...items.filter((item) => item.id !== recent.id),
-          ].slice(0, 10));
-        }
-      }).catch(() => {});
+      if (target === 'destination') {
+        addSearchHistory({
+          searchText: query.trim() || place.name,
+          name: place.name,
+          address: place.address,
+          latitude: place.position[0],
+          longitude: place.position[1],
+        }).then((savedHistory) => {
+          const recent = normalizePlace(savedHistory);
+          if (recent) {
+            setRecentPlaces((items) => [
+              recent,
+              ...items.filter((item) => item.id !== recent.id),
+            ].slice(0, 10));
+          }
+        }).catch(() => {});
+      }
     } catch (error) {
-      setStatus(error.message || 'Unable to calculate this route.');
+      setStatus(t('location.routeFailed'));
     } finally {
       setRouting(false);
     }
   }
 
+  async function useCurrentLocation() {
+    setStatus('');
+    try {
+      const position = await getBrowserPosition();
+      let currentPlace;
+      try {
+        const reverse = await reverseGeocode(position[0], position[1]);
+        currentPlace = {
+          ...normalizePlace(reverse),
+          id: 'current-location',
+          name: t('location.currentName'),
+          position,
+        };
+      } catch {
+        currentPlace = {
+          id: 'current-location',
+          name: t('location.currentName'),
+          address: `${position[0].toFixed(5)}, ${position[1].toFixed(5)}`,
+          position,
+        };
+      }
+      await selectPlace(currentPlace, 'pickup');
+    } catch (error) {
+      setStatus(t('location.positionUnavailable'));
+    }
+  }
+
   function continueBooking() {
     if (!pickup || !destination || !routePath.length || !routeMetrics) {
-      setStatus('Select a destination and wait for the route calculation.');
+      setStatus(t('location.selectRouteFirst'));
       return;
     }
     sessionStorage.setItem('jpTaxiSelectedRoute', JSON.stringify({
@@ -196,53 +242,93 @@ export default function LocationSearchPage() {
     navigate('/bill-confirm');
   }
 
+  const listPlaces = suggestions.length
+    ? suggestions.map((place) => ({ ...place, sourceLabel: t('location.candidate') }))
+    : [
+        ...savedPlaces.map((place) => ({ ...place, sourceLabel: t('location.saved') })),
+        ...recentPlaces
+          .filter((place) => !savedPlaces.some((saved) => saved.id === place.id))
+          .map((place) => ({ ...place, sourceLabel: t('location.history') })),
+      ];
+  const profileName = [profile?.lastName, profile?.firstName].filter(Boolean).join(' ')
+    || profile?.email
+    || '';
+
   return (
-    <PageShell withFooter={false}>
-      <main className="location-search-screen">
-        <Topbar actions={<><Link to="/home">Home</Link><Link to="/user-info/profile">Account</Link></>} />
-        <section className="location-search-layout">
-          <div className="location-search-panel">
-            <h1>Choose a destination</h1>
-            <label>
-              <span>Pickup</span>
-              <input disabled value={pickup?.address || ''} placeholder="Getting current location..." />
-            </label>
-            <label>
-              <span>Destination</span>
+    <PageShell>
+      <main className="location-window">
+        <Topbar
+          actions={(
+            <>
+              <Link to="/home">{t('common.home')}</Link>
+              <Link to="/user-info/profile">{t('common.account')}</Link>
+              <ProfileAvatarSlot
+                slot="topbar"
+                src={resolveAssetUrl(profile?.avatarUrl)}
+                fallbackText={profileName}
+              />
+            </>
+          )}
+        />
+        <section className="zip-location-main">
+          <section className="zip-location-left">
+            <h1>{t('location.title')}</h1>
+            <p>{t('location.subtitle')}</p>
+
+            <label className="zip-search-box">
+              <span>{t('location.destination')}</span>
               <input
                 autoComplete="off"
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search address or place"
+                onChange={(event) => {
+                  setActiveSearchTarget('destination');
+                  setQuery(event.target.value);
+                }}
+                onFocus={() => setActiveSearchTarget('destination')}
+                placeholder={t('location.destinationPlaceholder')}
                 value={query}
               />
             </label>
 
-            {searching ? <p role="status">Searching...</p> : null}
-            {suggestions.length ? (
-              <div className="location-suggestions">
-                {suggestions.map((place) => (
-                  <button key={place.id} onClick={() => selectDestination(place)} type="button">
-                    <strong>{place.name}</strong>
-                    <small>{place.address}</small>
-                  </button>
-                ))}
-              </div>
-            ) : null}
+            <label className="zip-search-box pickup-search-box">
+              <span>{t('location.pickup')}</span>
+              <input
+                autoComplete="off"
+                onChange={(event) => {
+                  setActiveSearchTarget('pickup');
+                  setPickupQuery(event.target.value);
+                }}
+                onFocus={() => setActiveSearchTarget('pickup')}
+                placeholder={t('location.pickupPlaceholder')}
+                value={pickupQuery}
+              />
+              <button
+                className="zip-current-location-button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  useCurrentLocation();
+                }}
+                type="button"
+              >
+                {t('map.currentLocation')}
+              </button>
+            </label>
 
-            <section>
-              <h2>Saved places</h2>
-              {savedPlaces.length ? savedPlaces.map((place) => (
-                <button className="saved-place-row" key={place.id} onClick={() => selectDestination(place)} type="button">
-                  <strong>{place.name}</strong>
-                  <small>{place.address}</small>
-                </button>
-              )) : <p className="empty-state">No saved places.</p>}
+            <section className="zip-route-card">
+              <div className="zip-route-points" aria-hidden="true">
+                <span className="route-start" />
+                <span className="route-line" />
+                <span className="route-end" />
+              </div>
+              <div className="zip-route-fields">
+                <div><span>{t('location.pickup')}</span><strong>{pickup?.name || t('location.selectPickup')}</strong></div>
+                <div><span>{t('location.destination')}</span><strong>{destination?.name || t('location.selectDestination')}</strong></div>
+              </div>
             </section>
 
-            <section>
+            <section className="zip-location-results">
               <div className="document-upload-heading">
-                <h2>Recent searches</h2>
-                {recentPlaces.length ? (
+                <h2>{suggestions.length ? t('location.results') : t('location.savedRecent')}</h2>
+                {!suggestions.length && recentPlaces.length ? (
                   <button
                     className="link-btn"
                     onClick={async () => {
@@ -251,60 +337,104 @@ export default function LocationSearchPage() {
                     }}
                     type="button"
                   >
-                    Clear
+                    {t('location.clearHistory')}
                   </button>
                 ) : null}
               </div>
-              {recentPlaces.length ? recentPlaces.map((place) => (
-                <button className="saved-place-row" key={place.id} onClick={() => selectDestination(place)} type="button">
-                  <strong>{place.name}</strong>
-                  <small>{place.address}</small>
-                </button>
-              )) : <p className="empty-state">No recent searches.</p>}
+              <div className="zip-history-list">
+                {searching ? <div className="zip-search-state" role="status">{t('location.searching')}</div> : null}
+                {!searching && listPlaces.map((place) => (
+                  <button
+                    className="zip-history-item"
+                    key={`${place.sourceLabel}-${place.id}`}
+                    onClick={() => selectPlace(place)}
+                    type="button"
+                  >
+                    <span className="zip-history-icon">{place.sourceLabel}</span>
+                    <span className="zip-history-text">
+                      <strong>{place.name}</strong>
+                      <small>{place.address}</small>
+                    </span>
+                    <span className="zip-history-time">{t('common.select')}</span>
+                  </button>
+                ))}
+                {!searching && !listPlaces.length ? (
+                  <p className="empty-state">{t('location.empty')}</p>
+                ) : null}
+              </div>
             </section>
 
             {routeMetrics ? (
-              <div className="route-summary">
+              <div className="route-summary" role="status" aria-live="polite">
+                <span className="route-summary-label">{t('location.routeReady')}</span>
                 <strong>{routeMetrics.distance}</strong>
                 <span>{routeMetrics.duration}</span>
                 <span>{routeMetrics.fare}</span>
               </div>
             ) : null}
             {status ? <p className="payment-status-text" role="alert">{status}</p> : null}
-            <button
-              className="submit-button"
-              disabled={routing || !routeMetrics}
-              onClick={continueBooking}
-              type="button"
-            >
-              {routing ? 'Calculating route...' : 'Continue'}
-            </button>
-          </div>
-          <InteractiveRouteMap
-            alternateRoutePath={[]}
-            currentLocation={pickup?.position}
-            route={[
-              ...(pickup ? [{
-                key: 'pickup',
-                label: pickup.name,
-                meta: pickup.address,
-                position: pickup.position,
-                type: 'pickup',
-              }] : []),
-              ...(destination ? [{
-                key: 'destination',
-                label: destination.name,
-                meta: destination.address,
-                position: destination.position,
-                type: 'destination',
-              }] : []),
-            ]}
-            routePath={routePath}
-            showCurrentLocation={Boolean(pickup)}
-            showDriver={false}
-            showMarkers
-            showRoute={Boolean(routePath.length)}
-          />
+
+            <div className="zip-location-actions">
+              <Link className="flow-back-link" to="/home">{t('common.back')}</Link>
+              <button
+                className={`zip-continue-button ${routing || !routeMetrics ? 'disabled' : ''}`}
+                disabled={routing || !routeMetrics}
+                onClick={continueBooking}
+                type="button"
+              >
+                {routing ? t('location.routeCalculating') : t('location.continue')}
+              </button>
+            </div>
+          </section>
+
+          <aside className={`zip-location-map ${routing ? 'is-refreshing' : ''}`}>
+            <InteractiveRouteMap
+              alternateRoutePath={[]}
+              className="location-search-route-map"
+              currentLocation={pickup?.position}
+              fitToRoute={Boolean(destination)}
+              interactive
+              mapCenter={pickup?.position}
+              mapZoom={15}
+              route={[
+                ...(pickup ? [{
+                  key: 'pickup',
+                  label: pickup.name,
+                  meta: pickup.address,
+                  position: pickup.position,
+                  type: 'pickup',
+                }] : []),
+                ...(destination ? [{
+                  key: 'destination',
+                  label: destination.name,
+                  meta: destination.address,
+                  position: destination.position,
+                  type: 'destination',
+                }] : []),
+              ]}
+              routePath={routePath}
+              routeSummary={routeMetrics ? `${routeMetrics.distance} - ${routeMetrics.duration}` : ''}
+              scrollWheelZoom
+              showControls
+              showCurrentLocation={Boolean(pickup)}
+              showDetails={Boolean(routeMetrics)}
+              showDriver={false}
+              showMarkers={Boolean(destination)}
+              showRoute={Boolean(routePath.length)}
+            />
+            <div className="zip-map-card">
+              <div><span>{t('location.pickup')}</span><b>{pickup?.name || '--'}</b></div>
+              <div><span>{t('location.destination')}</span><b>{destination?.name || '--'}</b></div>
+              <strong>{t('location.routeInfo')}</strong>
+              <div><span>{t('location.estimatedTime')}</span><b>{routeMetrics?.duration || '--'}</b></div>
+              <div><span>{t('location.distance')}</span><b>{routeMetrics?.distance || '--'}</b></div>
+              <div><span>{t('location.estimatedFare')}</span><b>{routeMetrics?.fare || '--'}</b></div>
+            </div>
+            <div className="zip-map-refresh-indicator" aria-hidden={!routing}>
+              <span />
+              <b>{t('location.updating')}</b>
+            </div>
+          </aside>
         </section>
       </main>
     </PageShell>

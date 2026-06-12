@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
+import { useI18n } from '../i18n/I18nProvider.jsx';
 
 export default function PasswordField({
   label,
@@ -10,6 +11,7 @@ export default function PasswordField({
   errorId,
   inputRef,
 }) {
+  const { t } = useI18n();
   const [visible, setVisible] = useState(false);
   const generatedId = useId();
   const inputId = `${generatedId}-password`;
@@ -39,7 +41,7 @@ export default function PasswordField({
         <button
           className="password-toggle"
           type="button"
-          aria-label={visible ? 'パスワードを隠す' : 'パスワードを表示'}
+          aria-label={visible ? t('common.hidePassword') : t('common.showPassword')}
           aria-pressed={String(visible)}
           onClick={togglePassword}
         >

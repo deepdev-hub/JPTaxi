@@ -1,8 +1,24 @@
-import { useEffect, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
+import { useI18n } from '../i18n/I18nProvider.jsx';
 
 const SIZE = 260;
 
-export default function AvatarCropper({ src, fileName = 'avatar.jpg', onCrop }) {
+const AvatarCropper = forwardRef(function AvatarCropper(
+  {
+    src,
+    fileName = 'avatar.jpg',
+    onCrop,
+    showApplyButton = true,
+  },
+  ref,
+) {
+  const { t } = useI18n();
   const canvasRef = useRef(null);
   const imageRef = useRef(null);
   const dragRef = useRef(null);
@@ -67,20 +83,38 @@ export default function AvatarCropper({ src, fileName = 'avatar.jpg', onCrop }) 
     dragRef.current = null;
   }
 
-  function applyCrop() {
+  function createCroppedFile() {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      onCrop(new File([blob], fileName.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }));
-    }, 'image/jpeg', 0.92);
+    if (!canvas || !imageRef.current) {
+      return Promise.reject(new Error(t('profile.selectImage')));
+    }
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error(t('profile.cropFailed')));
+          return;
+        }
+        resolve(new File(
+          [blob],
+          fileName.replace(/\.[^.]+$/, '') + '.jpg',
+          { type: 'image/jpeg' },
+        ));
+      }, 'image/jpeg', 0.92);
+    });
+  }
+
+  useImperativeHandle(ref, () => ({ createCroppedFile }));
+
+  async function applyCrop() {
+    const file = await createCroppedFile();
+    onCrop?.(file);
   }
 
   if (!src) return null;
 
   return (
     <section className="avatar-cropper">
-      <strong>画像の表示範囲を調整</strong>
+      <strong>{t('profile.cropTitle')}</strong>
       <div className="avatar-cropper-stage">
         <canvas
           ref={canvasRef}
@@ -94,10 +128,20 @@ export default function AvatarCropper({ src, fileName = 'avatar.jpg', onCrop }) 
         <span className="avatar-cropper-guide" />
       </div>
       <label className="avatar-cropper-zoom">
-        <span>ズーム</span>
+        <span>{t('profile.zoom')}</span>
         <input type="range" min="1" max="3" step="0.05" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} />
       </label>
-      <button className="secondary-button avatar-cropper-apply" type="button" onClick={applyCrop}>切り抜きを確定</button>
+      {showApplyButton ? (
+        <button
+          className="secondary-button avatar-cropper-apply"
+          type="button"
+          onClick={applyCrop}
+        >
+          {t('profile.applyCrop')}
+        </button>
+      ) : null}
     </section>
   );
-}
+});
+
+export default AvatarCropper;

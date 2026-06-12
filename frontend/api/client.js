@@ -8,6 +8,15 @@ function getAuthHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+export class ApiError extends Error {
+  constructor(message, { code = 'UNKNOWN', status = 0 } = {}) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
 export async function apiRequest(path, options = {}) {
   const { responseType, ...fetchOptions } = options;
   const isFormData = options.body instanceof FormData;
@@ -22,13 +31,18 @@ export async function apiRequest(path, options = {}) {
 
   if (!response.ok) {
     let message = `API request failed: ${response.status}`;
+    let code = 'UNKNOWN';
     try {
       const errorBody = await response.json();
       message = errorBody.message || message;
+      code = errorBody.code || code;
     } catch {
       /* keep default message */
     }
-    throw new Error(Array.isArray(message) ? message.join(', ') : message);
+    throw new ApiError(
+      Array.isArray(message) ? message.join(', ') : message,
+      { code, status: response.status },
+    );
   }
 
   const contentType = response.headers.get('content-type') || '';

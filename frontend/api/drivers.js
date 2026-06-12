@@ -1,15 +1,5 @@
 import { apiRequest } from './client.js';
 
-export function searchDrivers(params) {
-  const query = new URLSearchParams();
-  Object.entries(params).forEach(([key, value]) => {
-    if (value != null && value !== '') {
-      query.set(key, String(value));
-    }
-  });
-  return apiRequest(`/drivers/search?${query.toString()}`);
-}
-
 export function getDriverProfile(driverId) {
   return apiRequest(`/drivers/${driverId}/profile`);
 }
@@ -51,4 +41,15 @@ export function setDriverAvailability(isOnline) {
 
 export function getDriverPayouts() {
   return apiRequest('/drivers/me/payouts');
+}
+
+export function getDriverInsurance() {
+  return apiRequest('/drivers/me/insurance');
+}
+
+export function updateDriverInsurance(payload) {
+  return apiRequest('/drivers/me/insurance', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
 }

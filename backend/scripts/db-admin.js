@@ -73,13 +73,17 @@ async function main() {
   }
 
   if (command === 'reset') {
-    const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    const npmCli = process.env.npm_execpath;
+    if (!npmCli) {
+      throw new Error('Run database reset through npm run db:reset');
+    }
     for (const script of ['db:migrate', 'db:seed']) {
-      const result = spawnSync(npm, ['run', script], {
+      const result = spawnSync(process.execPath, [npmCli, 'run', script], {
         cwd: join(__dirname, '..'),
         env: process.env,
         stdio: 'inherit',
       });
+      if (result.error) throw result.error;
       if (result.status !== 0) process.exit(result.status || 1);
     }
   }

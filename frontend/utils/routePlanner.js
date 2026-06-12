@@ -1,10 +1,15 @@
 import { geocodePlaces, getDrivingRoute } from '../api/maps.js';
 
-export function formatDuration(seconds, meters = 0) {
+export function formatDuration(seconds, meters = 0, locale = 'en-US') {
   const baseMinutes = Math.max(1, Math.round(seconds / 60));
   const distanceKm = Math.max(0, meters / 1000);
   const trafficBufferMinutes = Math.max(3, Math.round(distanceKm * 1.2));
-  return `${baseMinutes + trafficBufferMinutes}分`;
+  const unit = locale.startsWith('ja')
+    ? '分'
+    : locale.startsWith('vi')
+      ? ' phút'
+      : ' min';
+  return `${baseMinutes + trafficBufferMinutes}${unit}`;
 }
 
 export function formatDistance(meters) {
@@ -70,7 +75,11 @@ export async function geocodePlace(address) {
   };
 }
 
-export async function buildSelectedRoute(destination, pickup) {
+export async function buildSelectedRoute(
+  destination,
+  pickup,
+  { locale = 'en-US', pickupName = 'Current location' } = {},
+) {
   if (!pickup) throw new Error('Pickup location is required.');
   const route = await fetchDrivingRoute(
     [pickup.latitude, pickup.longitude],
@@ -80,13 +89,13 @@ export async function buildSelectedRoute(destination, pickup) {
     destination,
     pickup: {
       id: 'current-location',
-      name: '現在位置',
+      name: pickupName,
       position: [pickup.latitude, pickup.longitude],
     },
     routePath: route.routePath,
     routeMetrics: {
       distance: formatDistance(route.distance),
-      duration: formatDuration(route.duration, route.distance),
+      duration: formatDuration(route.duration, route.distance, locale),
       fare: null,
     },
   };

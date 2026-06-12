@@ -13,8 +13,14 @@ import Topbar from '../components/Topbar.jsx';
 import { useChatSocket } from '../hooks/useChatSocket.js';
 import '../styles/app-pages.css';
 import { getAuthRole } from '../utils/session.js';
+import { useI18n } from '../i18n/I18nProvider.jsx';
 
-const QUICK_REPLIES = ['今どこですか？', '着きました！', '少し遅れます', '了解です'];
+const QUICK_REPLY_KEYS = [
+  'messages.quick.where',
+  'messages.quick.arrived',
+  'messages.quick.late',
+  'messages.quick.ok',
+];
 
 function getCurrentRole() {
   return getAuthRole();
@@ -24,11 +30,11 @@ function firstChar(name) {
   return (name || '?').trim().slice(0, 1) || '?';
 }
 
-function formatClock(iso) {
+function formatClock(iso, locale) {
   if (!iso) return '';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 }
 
 function getCurrentUserId(isDriver) {
@@ -61,6 +67,7 @@ function appendMessageOnce(items, message) {
 }
 
 export default function MessagesPage() {
+  const { locale, t } = useI18n();
   const { audience } = useParams();
   const [searchParams] = useSearchParams();
   const isDriver = getCurrentRole() === 'driver' || audience === 'customer';
@@ -98,12 +105,12 @@ export default function MessagesPage() {
       }
       return items;
     } catch (err) {
-      setError(err.message || '会話の取得に失敗しました。');
+      setError(t('messages.loadConversationsFailed'));
       return [];
     } finally {
       setLoadingConversations(false);
     }
-  }, [selectedConversationId]);
+  }, [selectedConversationId, t]);
 
   const loadMessages = useCallback(async (conversationId) => {
     if (!conversationId) {
@@ -119,11 +126,11 @@ export default function MessagesPage() {
         item.conversationId === conversationId ? { ...item, unreadCount: 0 } : item
       )));
     } catch (err) {
-      setError(err.message || 'メッセージの取得に失敗しました。');
+      setError(t('messages.loadFailed'));
     } finally {
       setLoadingMessages(false);
     }
-  }, [isDriver]);
+  }, [isDriver, t]);
 
   useEffect(() => {
     refreshConversations();
@@ -146,12 +153,12 @@ export default function MessagesPage() {
         }
         await refreshConversations();
       } catch (err) {
-        setError(err.message || '会話の作成に失敗しました。');
+        setError(t('messages.createFailed'));
       }
     }
 
     ensureConversation();
-  }, [peerIdParam, peerRole, refreshConversations, requestIdParam]);
+  }, [peerIdParam, peerRole, refreshConversations, requestIdParam, t]);
 
   useEffect(() => {
     loadMessages(selectedConversationId);
@@ -209,7 +216,7 @@ export default function MessagesPage() {
       }
       setDraft('');
     } catch (err) {
-      setError(err.message || '送信に失敗しました。');
+      setError(t('messages.sendFailed'));
     } finally {
       setSending(false);
     }
@@ -218,15 +225,15 @@ export default function MessagesPage() {
   return (
     <PageShell>
       <main className="messages-window">
-        <Topbar brandTo={homePath} actions={<><Link to={homePath}>ホーム</Link><Link to={messagePath} className="active-header-link">メッセージ</Link><Link to={accountPath}>アカウント</Link></>} />
+        <Topbar brandTo={homePath} actions={<><Link to={homePath}>{t('common.home')}</Link><Link to={messagePath} className="active-header-link">{t('common.messages')}</Link><Link to={accountPath}>{t('common.account')}</Link></>} />
         {error ? <p className="messages-error">{error}</p> : null}
 
         <section className="zip-chat-container">
           <aside className="zip-chat-sidebar">
-            <h1>メッセージ</h1>
+            <h1>{t('messages.title')}</h1>
             <div className="zip-chat-list">
               {!loadingConversations && conversations.length === 0 ? (
-                <p className="messages-empty">会話がありません</p>
+                <p className="messages-empty">{t('messages.noConversations')}</p>
               ) : null}
               {conversations.map((item) => (
                 <button
@@ -238,11 +245,11 @@ export default function MessagesPage() {
                   <span className="zip-avatar">{firstChar(item.peer?.name)}</span>
                   <span className="zip-chat-info">
                     <span>
-                      <strong>{item.peer?.name || 'ユーザー'}</strong>
-                      <small>{formatClock(item.lastMessage?.sentAt || item.updatedAt)}</small>
+                      <strong>{item.peer?.name || t('messages.user')}</strong>
+                      <small>{formatClock(item.lastMessage?.sentAt || item.updatedAt, locale)}</small>
                     </span>
                     <em>
-                      {item.lastMessage?.body || 'メッセージはまだありません'}
+                      {item.lastMessage?.body || t('messages.noMessages')}
                       {item.unreadCount > 0 ? ` (${item.unreadCount})` : ''}
                     </em>
                   </span>
@@ -253,25 +260,25 @@ export default function MessagesPage() {
 
           <section className="zip-main-chat">
             {!selectedConversation ? (
-              <div className="zip-main-chat-empty">左側の会話を選択してください。</div>
+              <div className="zip-main-chat-empty">{t('messages.selectConversation')}</div>
             ) : (
               <>
                 <header className="zip-chat-header">
                   <div>
                     <span className="zip-avatar small">{firstChar(selectedConversation.peer?.name)}</span>
-                    <span><strong>{selectedConversation.peer?.name || 'ユーザー'}</strong><small>オンライン</small></span>
+                    <span><strong>{selectedConversation.peer?.name || t('messages.user')}</strong><small>{t('messages.online')}</small></span>
                   </div>
                 </header>
 
                 <div className="zip-messages-viewport" ref={viewportRef}>
                   {!loadingMessages && messages.length === 0 ? (
-                    <p className="messages-empty">メッセージはまだありません</p>
+                    <p className="messages-empty">{t('messages.noMessages')}</p>
                   ) : null}
                   {messages.map((message) => {
                     const isMine = Boolean(message.isMine);
                     const senderLabel = isMine
-                      ? (isDriver ? 'Tài xế' : 'Khách')
-                      : (isDriver ? 'Khách' : 'Tài xế');
+                      ? (isDriver ? t('common.driver') : t('common.customer'))
+                      : (isDriver ? t('common.customer') : t('common.driver'));
                     return (
                       <div
                         className={`message-row ${isMine ? 'sent' : 'received'}`}
@@ -280,7 +287,7 @@ export default function MessagesPage() {
                         <p className="msg">
                           <strong>{senderLabel}</strong>
                           {message.body}
-                          <span>{formatClock(message.sentAt)}</span>
+                          <span>{formatClock(message.sentAt, locale)}</span>
                         </p>
                       </div>
                     );
@@ -289,14 +296,14 @@ export default function MessagesPage() {
 
                 <footer className="zip-input-area">
                   <div className="quick-replies">
-                    {QUICK_REPLIES.map((reply) => (
-                      <button type="button" key={reply} onClick={() => setDraft(reply)}>{reply}</button>
+                    {QUICK_REPLY_KEYS.map((key) => (
+                      <button type="button" key={key} onClick={() => setDraft(t(key))}>{t(key)}</button>
                     ))}
                   </div>
                   <form className="zip-input-box" onSubmit={handleSendMessage}>
                     <input
                       type="text"
-                      placeholder="メッセージを入力..."
+                      placeholder={t('messages.placeholder')}
                       value={draft}
                       onChange={(event) => setDraft(event.target.value)}
                     />

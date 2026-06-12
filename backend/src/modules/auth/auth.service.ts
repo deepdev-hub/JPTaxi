@@ -26,6 +26,8 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import type { JwtValidatedUser } from './jwt.strategy';
+import { ConfigService } from '@nestjs/config';
+import { resolveRegistrationStatus } from '../drivers/driver-approval.policy';
 
 @Injectable()
 export class AuthService {
@@ -44,6 +46,7 @@ export class AuthService {
     private readonly resetTokens: Repository<PasswordResetToken>,
     private readonly jwt: JwtService,
     private readonly mail: MailService,
+    private readonly config: ConfigService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -84,11 +87,16 @@ export class AuthService {
         idNumber: dto.id_number || null,
         isEmailVerified: false,
         isPhoneVerified: false,
-        status: DriverStatusType.pending,
+        status: resolveRegistrationStatus(
+          this.config.get<boolean>('AUTO_APPROVE_DRIVERS', false),
+        ),
         driverJapaneseLevel: dto.japanese_level ?? DriverJapaneseLevelEnum.N3,
         avatarUrl: dto.portrait_url || null,
         isOnline: false,
         lastSeenAt: null,
+        approvedAt: this.config.get<boolean>('AUTO_APPROVE_DRIVERS', false)
+          ? new Date()
+          : null,
       }));
       await this.vehicles.save(this.vehicles.create({
         driverId: driver.driverId,
@@ -128,7 +136,11 @@ export class AuthService {
     return this.session(customer.customerId, 'customer', customer.email, customer.firstName);
   }
 
-  async login(dto: LoginDto, clientIp?: string | null) {
+  async login(
+    dto: LoginDto,
+    clientIp?: string | null,
+    userAgent?: string | null,
+  ) {
     const email = dto.email.trim().toLowerCase();
     const role = dto.role ?? 'customer';
     const repository = role === 'driver' ? this.drivers : this.customers;
@@ -138,7 +150,10 @@ export class AuthService {
       .where('LOWER(account.email) = :email', { email })
       .getOne();
     if (!account || !(await bcrypt.compare(dto.password, account.passwordHash))) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException({
+        code: 'INVALID_CREDENTIALS',
+        message: 'Invalid email or password',
+      });
     }
     const id = role === 'driver'
       ? (account as Driver).driverId
@@ -147,6 +162,7 @@ export class AuthService {
       userType: role === 'driver' ? LoginUserType.driver : LoginUserType.customer,
       userId: id,
       ipAddress: clientIp || null,
+      userAgent: userAgent?.slice(0, 512) || null,
       loginTime: new Date(),
     }));
     return this.session(id, role, account.email, account.firstName);
@@ -195,7 +211,12 @@ export class AuthService {
         userType,
         userId,
         tokenHash: this.hashResetCode(code),
-        expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+        expiresAt: new Date(
+          Date.now() +
+          this.config.get<number>('PASSWORD_RESET_EXPIRATION_MINUTES', 30) *
+          60 *
+          1000,
+        ),
         usedAt: null,
       }));
       await this.mail.sendPasswordReset(email, code);

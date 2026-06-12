@@ -1,33 +1,16 @@
 import type { INestApplication } from '@nestjs/common';
-import { ValidationPipe } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { createTestApp, databaseUrl } from './test-app';
 
-const describeWithDatabase = process.env.TEST_DATABASE_URL ? describe : describe.skip;
+jest.setTimeout(120_000);
+
+const describeWithDatabase = databaseUrl ? describe : describe.skip;
 
 describeWithDatabase('seeded authentication (e2e)', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
-    process.env.JWT_SECRET =
-      process.env.JWT_SECRET ?? 'e2e-only-secret-with-at-least-32-characters';
-    process.env.FRONTEND_URL = 'http://localhost:5173';
-    const { AppModule } = await import('../src/app.module');
-    const moduleRef = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: true,
-      }),
-    );
-    await app.init();
+    app = await createTestApp();
   });
 
   afterAll(async () => {
@@ -50,6 +33,155 @@ describeWithDatabase('seeded authentication (e2e)', () => {
       .expect(200)
       .expect(({ body }) => {
         expect(body.role).toBe(role);
+      });
+  });
+
+  it('returns an invalid-credentials code for a failed login', async () => {
+    await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({
+        role: 'customer',
+        email: 'customer@jptaxi.local',
+        password: 'wrong-password',
+      })
+      .expect(401)
+      .expect(({ body }) => {
+        expect(body.code).toBe('INVALID_CREDENTIALS');
+      });
+  });
+
+  it('records the customer device and exposes owned login history', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .set('User-Agent', 'JP-Taxi-E2E/1.0')
+      .send({
+        role: 'customer',
+        email: 'customer@jptaxi.local',
+        password: 'password123',
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .get('/api/customers/me/login-history')
+      .set('Authorization', `Bearer ${login.body.token}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            userAgent: 'JP-Taxi-E2E/1.0',
+            loginTime: expect.any(String),
+          }),
+        ]));
+      });
+  });
+
+  it('rejects driver access to customer login history', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({
+        role: 'driver',
+        email: 'driver@jptaxi.local',
+        password: 'password123',
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .get('/api/customers/me/login-history')
+      .set('Authorization', `Bearer ${login.body.token}`)
+      .expect(403)
+      .expect(({ body }) => {
+        expect(body.code).toBe('FORBIDDEN');
+      });
+  });
+
+  it('rejects an avatar upload without an image file', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({
+        role: 'customer',
+        email: 'customer@jptaxi.local',
+        password: 'password123',
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/uploads/avatar')
+      .set('Authorization', `Bearer ${login.body.token}`)
+      .expect(400)
+      .expect(({ body }) => {
+        expect(body.message).toBe('Avatar image is required');
+      });
+  });
+
+  it('stores and returns insurance owned by the logged-in driver', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({
+        role: 'driver',
+        email: 'driver@jptaxi.local',
+        password: 'password123',
+      })
+      .expect(201);
+    const auth = { Authorization: `Bearer ${login.body.token}` };
+
+    await request(app.getHttpServer())
+      .put('/api/drivers/me/insurance')
+      .set(auth)
+      .send({
+        providerName: 'JP Local Insurance',
+        policyNumber: 'POL-2026-001',
+        effectiveDate: '2026-06-01',
+        expiryDate: '2027-06-01',
+        documentUrl: '/uploads/drivers/insurance/policy.webp',
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe('active');
+        expect(body.insurance.policyNumber).toBe('POL-2026-001');
+      });
+
+    await request(app.getHttpServer())
+      .get('/api/drivers/me/insurance')
+      .set(auth)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.insurance.driverId).toBe(1);
+      });
+  });
+
+  it('auto-approves the local pending driver after a fresh location is stored', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({
+        role: 'driver',
+        email: 'driver@gmail.com',
+        password: 'password123',
+      })
+      .expect(201);
+    const auth = { Authorization: `Bearer ${login.body.token}` };
+
+    await request(app.getHttpServer())
+      .post('/api/rides/driver/location')
+      .set(auth)
+      .send({ lat: 21.0734, lng: 105.852 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .put('/api/drivers/me/availability')
+      .set(auth)
+      .send({ isOnline: true })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.isOnline).toBe(true);
+      });
+
+    await request(app.getHttpServer())
+      .get('/api/drivers/me/profile')
+      .set(auth)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe('approved');
+        expect(body.latestLocation.latitude).toBeCloseTo(21.0734);
       });
   });
 });

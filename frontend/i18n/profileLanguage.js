@@ -1,7 +1,7 @@
 export const languageOptions = [
-  { value: 'ja', label: '日本語' },
-  { value: 'vi', label: 'Tiếng Việt' },
-  { value: 'en', label: 'English' },
+  { value: 'ja' },
+  { value: 'vi' },
+  { value: 'en' },
 ];
 
 const STORAGE_KEY = 'jpTaxiLanguage';
@@ -22,6 +22,11 @@ export function setStoredProfileLanguage(language) {
 export const profileText = {
   ja: {
     locale: 'ja-JP',
+    languageNames: {
+      ja: '日本語',
+      vi: 'ベトナム語',
+      en: '英語',
+    },
     common: {
       account: 'アカウント',
       addCard: 'カードを追加',
@@ -201,6 +206,11 @@ export const profileText = {
   },
   vi: {
     locale: 'vi-VN',
+    languageNames: {
+      ja: 'Tiếng Nhật',
+      vi: 'Tiếng Việt',
+      en: 'Tiếng Anh',
+    },
     common: {
       account: 'Tài khoản',
       addCard: 'Thêm thẻ',
@@ -380,6 +390,11 @@ export const profileText = {
   },
   en: {
     locale: 'en-US',
+    languageNames: {
+      ja: 'Japanese',
+      vi: 'Vietnamese',
+      en: 'English',
+    },
     common: {
       account: 'Account',
       addCard: 'Add Card',

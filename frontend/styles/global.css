@@ -237,6 +237,12 @@ input.input-error {
   display: block;
 }
 
+.form-status.error {
+  color: #991b1b;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
 .placeholder-page {
   min-height: 100vh;
   background: var(--soft);

@@ -22,7 +22,7 @@ export class AuthController {
 
   @Post('login')
   login(@Body() dto: LoginDto, @Req() req: Request) {
-    return this.auth.login(dto, req.ip);
+    return this.auth.login(dto, req.ip, req.get('user-agent'));
   }
 
   @Get('me')
