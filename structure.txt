@@ -1,0 +1,289 @@
+ITSSJP1-20252-Thu1-JPTaxi-main
+├── README.md
+├── backend
+│   ├── nest-cli.json
+│   ├── nixpacks.toml
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── railway.toml
+│   ├── scripts
+│   │   ├── db-admin.js
+│   │   └── test-db-connection.js
+│   ├── src
+│   │   ├── app.module.ts
+│   │   ├── common
+│   │   │   ├── api-exception.filter.spec.ts
+│   │   │   ├── api-exception.filter.ts
+│   │   │   ├── invoice-vat.util.spec.ts
+│   │   │   ├── invoice-vat.util.ts
+│   │   │   ├── payment-method.util.spec.ts
+│   │   │   ├── payment-method.util.ts
+│   │   │   ├── payout.util.spec.ts
+│   │   │   ├── payout.util.ts
+│   │   │   ├── pricing.util.spec.ts
+│   │   │   ├── pricing.util.ts
+│   │   │   ├── rating-comment.util.ts
+│   │   │   ├── roles.decorator.ts
+│   │   │   └── roles.guard.ts
+│   │   ├── config
+│   │   │   ├── cors.spec.ts
+│   │   │   ├── cors.ts
+│   │   │   ├── environment.spec.ts
+│   │   │   └── environment.ts
+│   │   ├── database
+│   │   │   ├── data-source.ts
+│   │   │   ├── migrations
+│   │   │   │   ├── 1718100000000-InitialSchema.ts
+│   │   │   │   ├── 1718200000000-AddLoginUserAgent.ts
+│   │   │   │   ├── 1718300000000-AddSimulatedPaymentMethods.ts
+│   │   │   │   ├── 1718400000000-AddDynamicDispatch.ts
+│   │   │   │   ├── 1718500000000-AddDriverInsurance.ts
+│   │   │   │   └── 1718600000000-AddRideEstimateMetrics.ts
+│   │   │   └── seed.ts
+│   │   ├── entities
+│   │   │   ├── admin.entity.ts
+│   │   │   ├── audit-log.entity.ts
+│   │   │   ├── conversation.entity.ts
+│   │   │   ├── customer-notification-preference.entity.ts
+│   │   │   ├── customer-payment-method.entity.ts
+│   │   │   ├── customer-saved-place.entity.ts
+│   │   │   ├── customer.entity.ts
+│   │   │   ├── driver-bank-account.entity.ts
+│   │   │   ├── driver-insurance.entity.ts
+│   │   │   ├── driver-license.entity.ts
+│   │   │   ├── driver-location-history.entity.ts
+│   │   │   ├── driver-payout.entity.ts
+│   │   │   ├── driver.entity.ts
+│   │   │   ├── invoice.entity.ts
+│   │   │   ├── login-history.entity.ts
+│   │   │   ├── message.entity.ts
+│   │   │   ├── password-reset-token.entity.ts
+│   │   │   ├── payment-transaction.entity.ts
+│   │   │   ├── pricing-rule.entity.ts
+│   │   │   ├── rating.entity.ts
+│   │   │   ├── ride-request-dispatch.entity.ts
+│   │   │   ├── ride-request.entity.ts
+│   │   │   ├── ride-search-driver-exclusion.entity.ts
+│   │   │   ├── search-history.entity.ts
+│   │   │   ├── trip.entity.ts
+│   │   │   ├── user-link.entity.ts
+│   │   │   └── vehicle.entity.ts
+│   │   ├── main.ts
+│   │   └── modules
+│   │       ├── admin
+│   │       │   ├── admin-auth.controller.ts
+│   │       │   ├── admin.controller.ts
+│   │       │   ├── admin.module.ts
+│   │       │   ├── admin.service.ts
+│   │       │   └── dto
+│   │       │       └── admin-login.dto.ts
+│   │       ├── auth
+│   │       │   ├── auth.controller.ts
+│   │       │   ├── auth.module.ts
+│   │       │   ├── auth.service.ts
+│   │       │   ├── dto
+│   │       │   │   ├── change-password.dto.ts
+│   │       │   │   ├── forgot-password.dto.ts
+│   │       │   │   ├── login.dto.ts
+│   │       │   │   ├── register.dto.ts
+│   │       │   │   └── reset-password.dto.ts
+│   │       │   └── jwt.strategy.ts
+│   │       ├── customers
+│   │       │   ├── customers.controller.ts
+│   │       │   ├── customers.module.ts
+│   │       │   ├── customers.service.ts
+│   │       │   └── dto
+│   │       │       ├── customer-settings.dto.ts
+│   │       │       └── update-customer-profile.dto.ts
+│   │       ├── drivers
+│   │       │   ├── driver-approval.policy.spec.ts
+│   │       │   ├── driver-approval.policy.ts
+│   │       │   ├── driver-insurance-status.spec.ts
+│   │       │   ├── driver-insurance-status.ts
+│   │       │   ├── drivers.controller.ts
+│   │       │   ├── drivers.module.ts
+│   │       │   ├── drivers.service.ts
+│   │       │   └── dto
+│   │       │       ├── apply-driver.dto.ts
+│   │       │       ├── update-bank-account.dto.ts
+│   │       │       ├── update-driver-documents.dto.ts
+│   │       │       ├── update-driver-insurance.dto.ts
+│   │       │       └── update-driver-profile.dto.ts
+│   │       ├── invoices
+│   │       │   ├── dto
+│   │       │   │   ├── invoice-action.dto.ts
+│   │       │   │   └── issue-invoice.dto.ts
+│   │       │   ├── invoice.constants.ts
+│   │       │   ├── invoices.controller.ts
+│   │       │   ├── invoices.module.ts
+│   │       │   └── invoices.service.ts
+│   │       ├── mail
+│   │       │   ├── mail.module.ts
+│   │       │   ├── mail.service.spec.ts
+│   │       │   └── mail.service.ts
+│   │       ├── map
+│   │       │   ├── map.controller.ts
+│   │       │   ├── map.module.ts
+│   │       │   ├── map.service.spec.ts
+│   │       │   └── map.service.ts
+│   │       ├── messages
+│   │       │   ├── dto
+│   │       │   │   ├── create-conversation.dto.ts
+│   │       │   │   ├── list-messages.query.dto.ts
+│   │       │   │   └── send-message.dto.ts
+│   │       │   ├── messages.controller.ts
+│   │       │   ├── messages.gateway.ts
+│   │       │   ├── messages.module.ts
+│   │       │   ├── messages.service.spec.ts
+│   │       │   └── messages.service.ts
+│   │       ├── ratings
+│   │       │   ├── dto
+│   │       │   │   └── submit-rating.dto.ts
+│   │       │   ├── ratings.controller.ts
+│   │       │   ├── ratings.module.ts
+│   │       │   └── ratings.service.ts
+│   │       ├── ride
+│   │       │   ├── dispatch-policy.spec.ts
+│   │       │   ├── dispatch-policy.ts
+│   │       │   ├── dispatch-scheduler.service.spec.ts
+│   │       │   ├── dispatch-scheduler.service.ts
+│   │       │   ├── dto
+│   │       │   │   ├── create-ride-request.dto.ts
+│   │       │   │   ├── estimate.dto.ts
+│   │       │   │   └── process-payment.dto.ts
+│   │       │   ├── ride.controller.ts
+│   │       │   ├── ride.gateway.ts
+│   │       │   ├── ride.module.ts
+│   │       │   └── ride.service.ts
+│   │       └── uploads
+│   │           ├── driver-document-type.enum.ts
+│   │           ├── upload-storage.service.spec.ts
+│   │           ├── upload-storage.service.ts
+│   │           ├── uploads.controller.ts
+│   │           └── uploads.module.ts
+│   ├── test
+│   │   ├── auth.e2e-spec.ts
+│   │   ├── business-flows.e2e-spec.ts
+│   │   ├── global-setup.ts
+│   │   ├── jest-e2e.json
+│   │   └── test-app.ts
+│   ├── tsconfig.build.json
+│   └── tsconfig.json
+├── docker-compose.yml
+├── frontend
+│   ├── api
+│   │   ├── accounts.js
+│   │   ├── auth.js
+│   │   ├── client.js
+│   │   ├── client.spec.js
+│   │   ├── customers.js
+│   │   ├── drivers.js
+│   │   ├── invoices.js
+│   │   ├── maps.js
+│   │   ├── messages.js
+│   │   ├── ratings.js
+│   │   └── rides.js
+│   ├── components
+│   │   ├── ActiveRideNavigationGuard.jsx
+│   │   ├── ActiveRideNavigationGuard.spec.jsx
+│   │   ├── AvatarCropper.jsx
+│   │   ├── AvatarCropper.spec.jsx
+│   │   ├── Footer.jsx
+│   │   ├── InteractiveRouteMap.jsx
+│   │   ├── InvoiceTemplate.jsx
+│   │   ├── Modal.jsx
+│   │   ├── PageShell.jsx
+│   │   ├── PasswordField.jsx
+│   │   ├── ProfileAvatarSlot.jsx
+│   │   └── Topbar.jsx
+│   ├── e2e
+│   │   ├── main-business-flow.spec.js
+│   │   ├── start-stack.mjs
+│   │   ├── visual-regression.spec.js
+│   │   ├── visual-regression.spec.js-snapshots
+│   │   │   ├── customer-home-desktop-chromium-win32.png
+│   │   │   └── customer-home-mobile-chromium-win32.png
+│   │   └── z-dispatch-reset-blacklist.spec.js
+│   ├── hooks
+│   │   ├── useChatSocket.js
+│   │   └── useRideSocket.js
+│   ├── i18n
+│   │   ├── I18nProvider.jsx
+│   │   ├── I18nProvider.spec.jsx
+│   │   ├── catalogs.js
+│   │   ├── errors.js
+│   │   ├── errors.spec.js
+│   │   └── profileLanguage.js
+│   ├── index.html
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── pages
+│   │   ├── BillConfirmPage.jsx
+│   │   ├── BillConfirmPage.spec.jsx
+│   │   ├── DriverAvailablePage.jsx
+│   │   ├── DriverDispatchPage.jsx
+│   │   ├── DriverDispatchPage.spec.jsx
+│   │   ├── DriverHomePage.jsx
+│   │   ├── DriverInfoPage.jsx
+│   │   ├── DriverInfoPage.spec.jsx
+│   │   ├── DriverRegisterPage.jsx
+│   │   ├── DriverReviewPage.jsx
+│   │   ├── DriverReviewPage.spec.jsx
+│   │   ├── DriverRideStatusPage.jsx
+│   │   ├── DriverRideStatusPage.spec.jsx
+│   │   ├── HomeExperience.jsx
+│   │   ├── HomeExperience.spec.jsx
+│   │   ├── HomePage.jsx
+│   │   ├── InvoicePage.jsx
+│   │   ├── InvoicePage.spec.jsx
+│   │   ├── LocationSearchPage.jsx
+│   │   ├── LocationSearchPage.spec.jsx
+│   │   ├── LoginPage.jsx
+│   │   ├── MessagesPage.jsx
+│   │   ├── PaymentPage.jsx
+│   │   ├── PaymentPage.spec.jsx
+│   │   ├── RegisterPage.jsx
+│   │   ├── RegisterPage.spec.jsx
+│   │   ├── ReservationSummaryPage.jsx
+│   │   ├── ReservationSummaryPage.spec.jsx
+│   │   ├── RideConfirmPage.jsx
+│   │   ├── RideConfirmPage.spec.jsx
+│   │   ├── RideStatusPage.jsx
+│   │   ├── RideStatusPage.spec.jsx
+│   │   ├── SearchCarPage.jsx
+│   │   ├── SearchCarPage.spec.jsx
+│   │   ├── UserInfoPage.jsx
+│   │   └── UserInfoPage.spec.jsx
+│   ├── playwright.config.js
+│   ├── public
+│   │   ├── favicon.ico
+│   │   └── favicon.svg
+│   ├── src
+│   │   ├── App.jsx
+│   │   ├── main.jsx
+│   │   └── test
+│   │       └── setup.js
+│   ├── styles
+│   │   ├── app-pages.css
+│   │   ├── auth.css
+│   │   ├── booking.css
+│   │   ├── footer.css
+│   │   ├── global.css
+│   │   └── search-car.css
+│   ├── utils
+│   │   ├── activeRideNavigation.js
+│   │   ├── activeRideNavigation.spec.js
+│   │   ├── invoiceSession.js
+│   │   ├── loginValidation.js
+│   │   ├── payment.js
+│   │   ├── payment.spec.js
+│   │   ├── place.js
+│   │   ├── place.spec.js
+│   │   ├── routePlanner.js
+│   │   ├── routePlanner.spec.js
+│   │   ├── session.js
+│   │   └── session.spec.js
+│   └── vercel.json
+├── package-lock.json
+├── package.json
+└── structure.txt

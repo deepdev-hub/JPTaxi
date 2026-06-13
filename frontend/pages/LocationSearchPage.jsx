@@ -14,23 +14,9 @@ import PageShell from '../components/PageShell.jsx';
 import ProfileAvatarSlot from '../components/ProfileAvatarSlot.jsx';
 import Topbar from '../components/Topbar.jsx';
 import { normalizePlace } from '../utils/place.js';
-import { formatDistance, formatDuration } from '../utils/routePlanner.js';
+import { formatDistance, formatDuration, getCurrentPosition } from '../utils/routePlanner.js';
 import { useI18n } from '../i18n/I18nProvider.jsx';
 import '../styles/app-pages.css';
-
-function getBrowserPosition() {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error('Geolocation is not available.'));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => resolve([coords.latitude, coords.longitude]),
-      () => reject(new Error('Unable to get your current location.')),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
-    );
-  });
-}
 
 export default function LocationSearchPage() {
   const navigate = useNavigate();
@@ -68,7 +54,7 @@ export default function LocationSearchPage() {
     Promise.allSettled([
       getSavedPlaces(),
       getSearchHistory(),
-      getBrowserPosition(),
+      getCurrentPosition().then((position) => [position.latitude, position.longitude]),
       getCustomerProfile(),
       (!autoFillDestination?.position && autoFillDestination) ? geocodePlaces(autoFillDestination.address) : Promise.resolve(null),
     ])
@@ -230,7 +216,8 @@ export default function LocationSearchPage() {
   async function useCurrentLocation() {
     setStatus('');
     try {
-      const position = await getBrowserPosition();
+      const resolvedPosition = await getCurrentPosition();
+      const position = [resolvedPosition.latitude, resolvedPosition.longitude];
       let currentPlace;
       try {
         const reverse = await reverseGeocode(position[0], position[1]);

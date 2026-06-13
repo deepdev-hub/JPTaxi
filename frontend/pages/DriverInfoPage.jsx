@@ -34,6 +34,7 @@ import { useI18n } from '../i18n/I18nProvider.jsx';
 import { translateApiError } from '../i18n/errors.js';
 import '../styles/app-pages.css';
 import { clearAuthSession } from '../utils/session.js';
+import { getCurrentPosition } from '../utils/routePlanner.js';
 
 const driverMenu = [
   { id: 'basic', icon: '👤', to: '/driver-info/basic' },
@@ -90,20 +91,6 @@ const emptyInsurance = {
   expiryDate: '',
   documentUrl: '',
 };
-
-function getCurrentPosition() {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error('Geolocation is unavailable'));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => resolve({ lat: coords.latitude, lng: coords.longitude }),
-      reject,
-      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 5_000 },
-    );
-  });
-}
 
 function normalizeProfile(profile = {}) {
   const hasStats = profile.stats && typeof profile.stats === 'object';
@@ -495,7 +482,10 @@ export default function DriverInfoPage() {
       if (isOnline) {
         const position = await getCurrentPosition();
         positionAcquired = true;
-        await updateDriverLocation(position);
+        await updateDriverLocation({
+          lat: position.latitude,
+          lng: position.longitude,
+        });
       }
       const result = await setDriverAvailability(isOnline);
       setOnline(Boolean(result?.isOnline));
