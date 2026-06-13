@@ -93,8 +93,8 @@ export class CustomersService {
     row ??= this.savedPlaces.create({ customerId, type: dto.type });
     row.label = dto.label;
     row.address = dto.address;
-    row.latitude = String(dto.latitude);
-    row.longitude = String(dto.longitude);
+    row.latitude = Number.isFinite(dto.latitude) ? String(dto.latitude) : null;
+    row.longitude = Number.isFinite(dto.longitude) ? String(dto.longitude) : null;
     return this.savedPlaces.save(row);
   }
 

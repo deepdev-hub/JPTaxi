@@ -46,6 +46,13 @@ describe('LocationSearchPage', () => {
     Object.defineProperty(navigator, 'geolocation', {
       configurable: true,
       value: {
+        watchPosition: vi.fn((success) => {
+          success({
+            coords: { latitude: 21.0285, longitude: 105.852, accuracy: 25 },
+          });
+          return 1;
+        }),
+        clearWatch: vi.fn(),
         getCurrentPosition: vi.fn((success) => success({
           coords: { latitude: 21.0285, longitude: 105.852 },
         })),
@@ -116,7 +123,7 @@ describe('LocationSearchPage', () => {
     );
 
     expect(await screen.findByText('Work')).toBeInTheDocument();
-    expect(container.querySelector('.location-window')).toBeInTheDocument();
+    expect(container.querySelector('.location-search-screen')).toBeInTheDocument();
     expect(container.querySelector('.zip-location-main')).toBeInTheDocument();
     expect(container.querySelector('.zip-location-left')).toBeInTheDocument();
     expect(container.querySelector('.zip-location-map')).toContainElement(

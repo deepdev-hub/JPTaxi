@@ -7,7 +7,7 @@ import InteractiveRouteMap from '../components/InteractiveRouteMap.jsx';
 import PageShell from '../components/PageShell.jsx';
 import Topbar from '../components/Topbar.jsx';
 import '../styles/app-pages.css';
-import { buildSelectedRoute, geocodePlace, getCurrentPosition } from '../utils/routePlanner.js';
+import { getCurrentPosition } from '../utils/routePlanner.js';
 import { normalizePlace } from '../utils/place.js';
 import { getRideContinuationPath, syncActiveRideSession } from '../utils/activeRideNavigation.js';
 import { useI18n } from '../i18n/I18nProvider.jsx';
@@ -49,8 +49,8 @@ export default function HomeExperience({ mode = 'user' }) {
   const isUserMode = mode !== 'driver';
   const [savedPlaces, setSavedPlaces] = useState([]);
   const [profile, setProfile] = useState(null);
-  const [quickLoading, setQuickLoading] = useState(null);
   const [rideContinuationPath, setRideContinuationPath] = useState(null);
+  const [currentLocation, setCurrentLocation] = useState(null);
 
   const quickItems = isUserMode
     ? savedPlaces.map((place) => ({
@@ -74,6 +74,24 @@ export default function HomeExperience({ mode = 'user' }) {
       })
       .catch(() => {
         if (!ignored) setRideContinuationPath(null);
+      });
+
+    return () => {
+      ignored = true;
+    };
+  }, [isUserMode]);
+
+  useEffect(() => {
+    if (!isUserMode) return undefined;
+    let ignored = false;
+    getCurrentPosition()
+      .then((position) => {
+        if (!ignored) {
+          setCurrentLocation([position.latitude, position.longitude]);
+        }
+      })
+      .catch(() => {
+        if (!ignored) setCurrentLocation(null);
       });
 
     return () => {
@@ -158,8 +176,10 @@ export default function HomeExperience({ mode = 'user' }) {
           <InteractiveRouteMap
             className="home-background-map"
             centerOnCurrentLocation
+            currentLocation={currentLocation}
             fitToRoute={false}
             interactive
+            mapCenter={currentLocation || undefined}
             mapZoom={15}
             scrollWheelZoom
             showControls
@@ -194,7 +214,7 @@ export default function HomeExperience({ mode = 'user' }) {
                   <>
                     <span>{item.icon}</span>
                     <div>
-                      <strong>{quickLoading === item.key ? t('home.searching') : (isUserMode ? item.title : t(item.title))}</strong>
+                      <strong>{isUserMode ? item.title : t(item.title)}</strong>
                       <small>{item.address || (item.copy ? t(item.copy) : t('home.setAddress'))}</small>
                     </div>
                   </>
