@@ -1,12 +1,27 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { User, Mail, Phone, MapPin, Lock, Save, Store, Camera, CheckCircle, AlertCircle } from "lucide-react";
+import {
+  User,
+  Mail,
+  Phone,
+  MapPin,
+  Lock,
+  Save,
+  Store,
+  Camera,
+  CheckCircle,
+  AlertCircle,
+  LoaderCircle,
+} from "lucide-react";
 import { updateUser, uploadAvatarImage } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
 export function ProfilePage() {
-  const { currentUser, updateProfile, isLoggedIn } = useAuth();
+  const { currentUser, updateProfile, syncCurrentUser, isLoggedIn } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
 
@@ -27,6 +42,8 @@ export function ProfilePage() {
   useEffect(() => {
     if (!isLoggedIn) navigate("/login");
   }, [isLoggedIn, navigate]);
+
+  const avatarAlt = useMemo(() => currentUser?.name || "User avatar", [currentUser?.name]);
 
   if (!isLoggedIn || !currentUser) return null;
 
@@ -61,17 +78,23 @@ export function ProfilePage() {
     setAvatarError("");
 
     if (!file || avatarUploading) return;
-    if (!file.type.startsWith("image/")) {
-      setAvatarError("Vui lòng chọn file ảnh hợp lệ.");
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setAvatarError("Vui long chon anh JPG, PNG hoac WEBP.");
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      setAvatarError("Anh dai dien khong duoc vuot qua 10MB.");
       return;
     }
 
     setAvatarUploading(true);
     try {
       const savedUser = await uploadAvatarImage(currentUser.id, file);
-      await updateProfile({ avatar: savedUser.avatar });
+      syncCurrentUser(savedUser);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
     } catch (error) {
-      setAvatarError(error instanceof Error ? error.message : "Không thể tải ảnh đại diện.");
+      setAvatarError(error instanceof Error ? error.message : "Khong the tai anh dai dien.");
     } finally {
       setAvatarUploading(false);
     }
@@ -83,23 +106,23 @@ export function ProfilePage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Profile Header */}
         <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-6">
           <div className="flex flex-col sm:flex-row items-center gap-5">
             <div className="relative">
               <div className="w-24 h-24 rounded-full overflow-hidden bg-blue-100 flex items-center justify-center">
                 {currentUser.avatar ? (
-                  <img src={currentUser.avatar} alt={currentUser.name} className="w-full h-full object-cover" />
+                  <img src={currentUser.avatar} alt={avatarAlt} className="w-full h-full object-cover" />
                 ) : (
                   <User className="w-10 h-10 text-blue-400" />
                 )}
               </div>
-              <label className="absolute bottom-0 right-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-md hover:bg-blue-700 transition-colors cursor-pointer">
-                <Camera className="w-4 h-4" />
+              <label className={`absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full text-white shadow-md transition-colors ${avatarUploading ? "bg-blue-400 cursor-wait" : "bg-blue-600 hover:bg-blue-700 cursor-pointer"}`}>
+                {avatarUploading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
                   onChange={handleAvatarChange}
+                  disabled={avatarUploading}
                   className="hidden"
                 />
               </label>
@@ -139,7 +162,6 @@ export function ProfilePage() {
           </div>
         )}
 
-        {/* Tabs */}
         <div className="flex gap-2 mb-6">
           <button
             onClick={() => setActiveTab("profile")}
@@ -159,7 +181,6 @@ export function ProfilePage() {
           </button>
         </div>
 
-        {/* Profile Form */}
         {activeTab === "profile" && (
           <div className="bg-white rounded-2xl border border-gray-100 p-6">
             <h2 className="text-gray-900 mb-6">{t.profile.basicInfoTitle}</h2>
@@ -231,7 +252,6 @@ export function ProfilePage() {
           </div>
         )}
 
-        {/* Password Form */}
         {activeTab === "password" && (
           <div className="bg-white rounded-2xl border border-gray-100 p-6">
             <h2 className="text-gray-900 mb-6">{t.profile.passwordTitle}</h2>

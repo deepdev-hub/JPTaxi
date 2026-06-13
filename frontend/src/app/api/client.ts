@@ -5,13 +5,24 @@ const API_BASE_URL = rawApiBaseUrl.replace(/\/+$/, "");
 const rawPublicAppUrl = import.meta.env.VITE_PUBLIC_APP_URL?.trim() || "";
 const PUBLIC_APP_URL = rawPublicAppUrl.replace(/\/+$/, "");
 
+function isLocalhostUrl(value: string) {
+  try {
+    const { hostname } = new URL(value);
+    return hostname === "localhost" || hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
 function buildApiUrl(path: string) {
   return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
 export function getPublicAppUrl() {
   if (PUBLIC_APP_URL) return PUBLIC_APP_URL;
-  if (typeof window !== "undefined" && window.location?.origin) return window.location.origin;
+  if (typeof window !== "undefined" && window.location?.origin && !isLocalhostUrl(window.location.origin)) {
+    return window.location.origin;
+  }
   return "http://localhost:5173";
 }
 

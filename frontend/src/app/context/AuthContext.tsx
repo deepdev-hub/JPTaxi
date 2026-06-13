@@ -10,6 +10,7 @@ interface AuthContextType {
   logout: () => void;
   signup: (email: string, password: string, name: string, role: "diner" | "owner") => Promise<{ success: boolean; error?: string }>;
   updateProfile: (data: Partial<User>) => Promise<boolean>;
+  syncCurrentUser: (user: User) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -66,6 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCurrentUser(null);
   };
 
+  const syncCurrentUser = (user: User) => {
+    setCurrentUser(user);
+  };
+
   const signup = async (email: string, password: string, name: string, role: "diner" | "owner"): Promise<{ success: boolean; error?: string }> => {
     if (!email || !password || !name) return { success: false, error: "Missing required fields" };
 
@@ -100,6 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         signup,
         updateProfile,
+        syncCurrentUser,
       }}
     >
       {children}
