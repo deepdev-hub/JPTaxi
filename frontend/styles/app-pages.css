@@ -1410,21 +1410,7 @@
   border-left: 0;
 }
 
-.profile-window .bottom-nav {
-  position: static;
-  height: 94px;
-  border-top: 1px solid #e5e7eb;
-}
 
-.profile-window .bottom-item {
-  min-width: 260px;
-  gap: 14px;
-  font-size: 18px;
-}
-
-.profile-window .bottom-icon {
-  font-size: 20px;
-}
 
 .profile-reference-grid {
   display: grid;
@@ -4613,15 +4599,7 @@ button.zip-fast-button {
   border-radius: 10px;
 }
 
-.profile-window .bottom-nav {
-  height: 64px;
-}
 
-.profile-window .bottom-item {
-  min-width: 180px;
-  gap: 8px;
-  font-size: 14px;
-}
 
 
 /* Driver dispatch reference layout */

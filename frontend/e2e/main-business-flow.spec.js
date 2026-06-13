@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 async function login(page, { email, password = 'password123', role }) {
   await page.addInitScript(() => {
-    localStorage.setItem('jpTaxiLanguage', 'en');
+    localStorage.setItem('jpTaxiLanguage', 'ja');
   });
   await page.goto('/login');
   if (role === 'driver') {

@@ -696,7 +696,7 @@ export default function UserInfoPage() {
   }
 
   return (
-    <PageShell withFooter={false}>
+    <PageShell>
       <main className="app-screen zip-profile-screen">
         <div className="profile-window">
           <Topbar actions={<><Link to="/home">{t('common.home')}</Link><Link to="/user-info/profile">{t('common.account')}</Link><Link to="/user-info/profile" className="topbar-avatar-link"><img className="topbar-avatar" src={avatar} alt="" /></Link></>} />
@@ -733,7 +733,6 @@ export default function UserInfoPage() {
               {renderContent()}
             </section>
           </section>
-          <Footer />
         </div>
 
         <Modal open={Boolean(modal)} title={modalTitle || userText.modal.saved} onClose={() => setModal(null)}>

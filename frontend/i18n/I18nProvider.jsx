@@ -11,17 +11,17 @@ function interpolate(template, values = {}) {
 }
 
 function translate(language, key, values) {
-  const template = catalogs[language]?.[key] ?? catalogs.en[key] ?? key;
+  const template = catalogs[language]?.[key] ?? catalogs.ja[key] ?? key;
   return interpolate(template, values);
 }
 
 const fallbackValue = {
-  language: 'en',
-  locale: localeByLanguage.en,
+  language: 'ja',
+  locale: localeByLanguage.ja,
   setLanguage: () => {},
-  t: (key, values) => translate('en', key, values),
-  formatDateTime: (value, options) => new Intl.DateTimeFormat(localeByLanguage.en, options).format(new Date(value)),
-  formatNumber: (value, options) => new Intl.NumberFormat(localeByLanguage.en, options).format(value),
+  t: (key, values) => translate('ja', key, values),
+  formatDateTime: (value, options) => new Intl.DateTimeFormat(localeByLanguage.ja, options).format(new Date(value)),
+  formatNumber: (value, options) => new Intl.NumberFormat(localeByLanguage.ja, options).format(value),
 };
 
 const I18nContext = createContext(fallbackValue);
@@ -46,7 +46,7 @@ export function I18nProvider({ children }) {
   }, [language]);
 
   const value = useMemo(() => {
-    const locale = localeByLanguage[language] || localeByLanguage.en;
+    const locale = localeByLanguage[language] || localeByLanguage.ja;
     return {
       language,
       locale,

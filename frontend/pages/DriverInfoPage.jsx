@@ -936,8 +936,8 @@ export default function DriverInfoPage() {
   }
 
   return (
-    <PageShell withFooter={false}>
-      <main className="app-screen zip-profile-screen">
+    <PageShell withFooter={true}>
+      <main className="app-screen zip-profile-screen driver-profile-screen">
         <div className="profile-window">
           <Topbar brandTo="/driver-home" brandExtra={t('brand.forDriver')} actions={<><Link to="/driver-home">{t('common.home')}</Link><Link to="/driver-info/basic">{t('common.account')}</Link><Link to="/driver-info/basic" className="topbar-avatar-link"><img className="topbar-avatar driver-avatar-top" src={avatar} alt="" /></Link></>} />
           <section className="profile-page-shell zip-profile-shell">
@@ -973,7 +973,6 @@ export default function DriverInfoPage() {
               {renderTab()}
             </section>
           </section>
-          <Footer />
         </div>
 
         <Modal className={modal === 'rating' ? 'driver-rating-modal' : ''} open={Boolean(modal)} title={modalTitle} onClose={() => setModal(null)}>

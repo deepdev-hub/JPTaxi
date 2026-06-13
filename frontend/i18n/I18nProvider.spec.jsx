@@ -15,19 +15,18 @@ function Example() {
 }
 
 describe('i18n catalogs', () => {
-  it('keeps the same key set for Japanese, Vietnamese and English', () => {
+  it('keeps the same key set for Japanese and Vietnamese', () => {
     const expected = Object.keys(catalogs.ja).sort();
     expect(Object.keys(catalogs.vi).sort()).toEqual(expected);
-    expect(Object.keys(catalogs.en).sort()).toEqual(expected);
   });
 
   it('updates translated text and the document language without DOM translation', async () => {
-    localStorage.setItem('jpTaxiLanguage', 'en');
+    localStorage.setItem('jpTaxiLanguage', 'ja');
     const user = userEvent.setup();
     render(<I18nProvider><Example /></I18nProvider>);
 
-    expect(screen.getByText(/searching within 4 km/i)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'en' }));
+    expect(screen.getByText(/半径 4 km 以内で検索中/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'ja' }));
     expect(screen.getByText(/bán kính 4 km/i)).toBeInTheDocument();
     expect(document.documentElement.lang).toBe('vi');
   });

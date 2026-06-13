@@ -21,12 +21,12 @@ export default function Footer() {
 
   return (
     <footer className="bottom-nav" aria-label={t('nav.main')}>
-      <NavLink className={({ isActive }) => `bottom-item ${isActive ? 'active' : ''}`} to={homePath}>
+      <NavLink className={({ isActive }) => `bottom-item ${isActive && !isAccountActive ? 'active' : ''}`} to={homePath}>
         <span className="bottom-icon" aria-hidden="true">🏠</span>
         <span>{t('common.home')}</span>
       </NavLink>
       <div className="divider"></div>
-      <NavLink className={({ isActive }) => `bottom-item ${isActive ? 'active' : ''}`} to={messagePath}>
+      <NavLink className={({ isActive }) => `bottom-item ${isActive && !isAccountActive ? 'active' : ''}`} to={messagePath}>
         <span className="icon-with-badge">
           <span className="bottom-icon" aria-hidden="true">💬</span>
           {totalUnread > 0 && <span className="badge-notification">{totalUnread}</span>}

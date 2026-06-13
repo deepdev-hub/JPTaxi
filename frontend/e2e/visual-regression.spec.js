@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 async function loginCustomer(page) {
   await page.addInitScript(() => {
-    localStorage.setItem('jpTaxiLanguage', 'en');
+    localStorage.setItem('jpTaxiLanguage', 'ja');
   });
   await page.goto('/login');
   await page.locator('#emailInput').fill('customer@jptaxi.local');
