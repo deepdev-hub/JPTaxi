@@ -93,24 +93,14 @@ export default function InvoicePage() {
           {!loading && invoice ? <InvoiceTemplate invoice={invoice} /> : null}
           {!loading && !invoice ? <p className="empty-state">{status}</p> : null}
           {invoice ? (
-            <>
-              <label className="payment-field">
-                {t('invoice.recipient')}
-                <input
-                  onChange={(event) => setEmail(event.target.value)}
-                  type="email"
-                  value={email}
-                />
-              </label>
-              <div className="invoice-actions">
-                <button onClick={downloadPdf} type="button">{t('invoice.download')}</button>
-                <button onClick={sendEmail} type="button">{t('invoice.sendEmail')}</button>
-              </div>
-            </>
+            <div className="invoice-actions">
+              <button onClick={downloadPdf} type="button">📄 {t('invoice.download')}</button>
+              <button onClick={sendEmail} type="button">📧 {t('invoice.sendEmail')}</button>
+            </div>
           ) : null}
           {status && invoice ? <p className="payment-status-text" role="status">{status}</p> : null}
           <Link className="invoice-close" to={closePath}>
-            {role === 'driver' ? t('common.close') : t('invoice.rateDriver')}
+            {t('common.close')}
           </Link>
         </section>
       </main>

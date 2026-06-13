@@ -14,7 +14,7 @@ import LoginPage from '../pages/LoginPage.jsx';
 import MessagesPage from '../pages/MessagesPage.jsx';
 import PaymentPage from '../pages/PaymentPage.jsx';
 import RegisterPage from '../pages/RegisterPage.jsx';
-import ReservationSummaryPage from '../pages/ReservationSummaryPage.jsx';
+
 import RideConfirmPage from '../pages/RideConfirmPage.jsx';
 import RideStatusPage from '../pages/RideStatusPage.jsx';
 import SearchCarPage from '../pages/SearchCarPage.jsx';
@@ -56,11 +56,14 @@ function RoleHomeRedirect() {
   return <Navigate to={currentRole === 'driver' ? '/driver-home' : '/home'} replace />;
 }
 
+import { ChatProvider } from '../contexts/ChatContext.jsx';
+
 export default function App() {
   return (
     <I18nProvider>
       <ActiveRideNavigationGuard>
-        <Routes>
+        <ChatProvider>
+          <Routes>
           <Route path="/" element={<RoleHomeRedirect />} />
           <Route path="/home" element={<ProtectedRoute role="customer"><HomePage /></ProtectedRoute>} />
           <Route path="/driver-home" element={<ProtectedRoute role="driver"><DriverHomePage /></ProtectedRoute>} />
@@ -85,7 +88,7 @@ export default function App() {
           <Route path="/driver-info/:section" element={<ProtectedRoute role="driver"><DriverInfoPage /></ProtectedRoute>} />
           <Route path="/driver_info.html" element={<Navigate to="/driver-info" replace />} />
           <Route path="/bill-confirm" element={<ProtectedRoute role="customer"><BillConfirmPage /></ProtectedRoute>} />
-          <Route path="/reservation-summary" element={<ProtectedRoute role="customer"><ReservationSummaryPage /></ProtectedRoute>} />
+
           <Route path="/bill_confirm.html" element={<Navigate to="/bill-confirm" replace />} />
           <Route path="/xacnhandatxe.html" element={<Navigate to="/bill-confirm" replace />} />
           <Route path="/search-car" element={<ProtectedRoute role="customer"><SearchCarPage /></ProtectedRoute>} />
@@ -105,6 +108,7 @@ export default function App() {
           <Route path="/danhgiataixe.html" element={<Navigate to="/driver-review" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
+        </ChatProvider>
       </ActiveRideNavigationGuard>
     </I18nProvider>
   );

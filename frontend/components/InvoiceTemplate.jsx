@@ -4,11 +4,10 @@ export default function InvoiceTemplate({ invoice, id = 'invoice-print-area' }) 
   const { formatDateTime, formatNumber, t } = useI18n();
   if (!invoice) return null;
   const formatYen = (amount) => `¥${formatNumber(amount ?? 0)}`;
-  const formatVnd = (amount) => `${formatNumber(amount ?? 0)} VND`;
   const formatServiceDate = (iso) => iso
-    ? formatDateTime(iso, { dateStyle: 'medium', timeStyle: 'short' })
+    ? formatDateTime(iso, { dateStyle: 'long', timeStyle: 'short' })
     : '-';
-  const { amounts, lineItems = [], trip = {}, payment, seller = {} } = invoice;
+  const { amounts, lineItems = [], trip = {}, payment } = invoice;
   const vat = amounts?.jpy ?? {};
   const paymentLabel = payment
     ? (payment.lastFour
@@ -19,18 +18,12 @@ export default function InvoiceTemplate({ invoice, id = 'invoice-print-area' }) 
   return (
     <div className="zip-invoice-paper" id={id}>
       <header>
-        <div className="invoice-brand">JP TAXI</div>
+        <div className="invoice-brand">🚕 JP TAXI</div>
         <div>
-          <h1>{invoice.title || t('invoice.receipt')}</h1>
+          <h1>{t('invoice.receipt')}</h1>
           <p>NO. {invoice.invoiceNumber}</p>
-          {invoice.issued ? <p className="invoice-issued-badge">{t('invoice.issued')}</p> : null}
         </div>
       </header>
-
-      <div className="invoice-seller-block">
-        <span>{seller.legalName || seller.legalNameJa}</span>
-        <small>{seller.taxCode} · {seller.address || seller.addressJa}</small>
-      </div>
 
       <div className="invoice-details-grid">
         <article>
@@ -56,34 +49,31 @@ export default function InvoiceTemplate({ invoice, id = 'invoice-print-area' }) 
           <tr><th>{t('invoice.item')}</th><th>{t('invoice.amountJpy')}</th></tr>
         </thead>
         <tbody>
-          {lineItems.map((row) => (
-            <tr key={row.code}>
-              <td>{row.label || row.labelJa}</td>
-              <td>{formatYen(row.amountJpy)}</td>
-            </tr>
-          ))}
+          {lineItems.map((row) => {
+            let label = row.label || row.labelJa;
+            if (row.code === 'TAXI_FARE') {
+              label = t('invoice.taxiFare', { distance: formatNumber(trip.distanceKm) });
+            } else if (row.code === 'SERVICE_FEE') {
+              label = t('invoice.serviceFee');
+            }
+            return (
+              <tr key={row.code}>
+                <td>{label}</td>
+                <td>{formatYen(row.amountJpy)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
-      <div className="invoice-vat-note">
-        <span>{t('invoice.reference')}: {formatVnd(amounts?.vnd?.totalInclTax)}</span>
-        <span>{t('invoice.vatIncluded', { rate: vat.vatRatePercent })}</span>
-      </div>
-
       <div className="invoice-summary">
+        <div className="qr-code"><span /></div>
         <div>
           <span>{t('invoice.total')}</span>
           <strong>{formatYen(vat.totalInclTax)}</strong>
-          <small>VAT: {formatYen(vat.vatAmount)}</small>
+          <small>{t('invoice.vatIncluded', { rate: vat.vatRatePercent, amount: formatNumber(vat.vatAmount) })}</small>
         </div>
       </div>
-
-      {invoice.buyer ? (
-        <footer className="invoice-buyer-footer">
-          <span>{t('common.customer')}</span>
-          <strong>{invoice.buyer.name}</strong>
-        </footer>
-      ) : null}
     </div>
   );
 }

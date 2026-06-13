@@ -10,6 +10,7 @@ import Topbar from '../components/Topbar.jsx';
 import { useRideSocket } from '../hooks/useRideSocket.js';
 import { useI18n } from '../i18n/I18nProvider.jsx';
 import { translateApiError } from '../i18n/errors.js';
+import { useChatNotification } from '../contexts/ChatContext.jsx';
 import { formatDistance, formatDuration } from '../utils/routePlanner.js';
 import '../styles/app-pages.css';
 
@@ -24,6 +25,7 @@ function driverPosition(driver) {
 export default function RideStatusPage() {
   const navigate = useNavigate();
   const { locale, t } = useI18n();
+  const { totalUnread } = useChatNotification();
   const [ride, setRide] = useState(null);
   const [profile, setProfile] = useState(null);
   const [routePath, setRoutePath] = useState([]);
@@ -184,7 +186,10 @@ export default function RideStatusPage() {
                 </div>
                 <div className="tracking-actions">
                   <Link className="tracking-call" to={messageLink}>{t('ride.contact')}</Link>
-                  <Link className="tracking-message" to={messageLink}>{t('common.messages')}</Link>
+                  <Link className="tracking-message icon-with-badge" to={messageLink} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {t('common.messages')}
+                    {totalUnread > 0 && <span className="badge-notification">{totalUnread}</span>}
+                  </Link>
                 </div>
                 {status ? <p className="tracking-error-text">{status}</p> : null}
               </section>

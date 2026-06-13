@@ -699,7 +699,7 @@ export default function UserInfoPage() {
     <PageShell withFooter={false}>
       <main className="app-screen zip-profile-screen">
         <div className="profile-window">
-          <Topbar actions={<><Link to="/home">{common.home}</Link><Link to="/messages/driver">{common.messages}</Link>{avatar ? <img className="topbar-avatar" src={avatar} alt="" /> : <span className="topbar-avatar" />}</>} />
+          <Topbar actions={<><Link to="/home">{t('common.home')}</Link><Link to="/user-info/profile">{t('common.account')}</Link><Link to="/user-info/profile" className="topbar-avatar-link"><img className="topbar-avatar" src={avatar} alt="" /></Link></>} />
           <section className="profile-page-shell zip-profile-shell">
             <aside className="profile-sidebar">
               <section className="profile-card zip-profile-card">

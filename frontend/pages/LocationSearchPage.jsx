@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   addSearchHistory,
   clearSearchHistory,
@@ -34,14 +34,26 @@ function getBrowserPosition() {
 
 export default function LocationSearchPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { formatNumber, locale, t } = useI18n();
+  const autoFillDestination = location.state?.autoFillDestination;
   const [pickup, setPickup] = useState(null);
-  const [destination, setDestination] = useState(null);
+  const [destination, setDestination] = useState(() => {
+    if (autoFillDestination?.position) {
+      return {
+        id: 'autofill-dest',
+        name: autoFillDestination.name,
+        address: autoFillDestination.address,
+        position: autoFillDestination.position,
+      };
+    }
+    return null;
+  });
   const [profile, setProfile] = useState(null);
   const [savedPlaces, setSavedPlaces] = useState([]);
   const [recentPlaces, setRecentPlaces] = useState([]);
   const [pickupQuery, setPickupQuery] = useState('');
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(autoFillDestination?.name || autoFillDestination?.address || '');
   const [activeSearchTarget, setActiveSearchTarget] = useState('destination');
   const [suggestions, setSuggestions] = useState([]);
   const [routePath, setRoutePath] = useState([]);
@@ -58,8 +70,9 @@ export default function LocationSearchPage() {
       getSearchHistory(),
       getBrowserPosition(),
       getCustomerProfile(),
+      (!autoFillDestination?.position && autoFillDestination) ? geocodePlaces(autoFillDestination.address) : Promise.resolve(null),
     ])
-      .then(async ([placesResult, historyResult, positionResult, profileResult]) => {
+      .then(async ([placesResult, historyResult, positionResult, profileResult, autofillResult]) => {
         if (ignored) return;
         if (placesResult.status === 'fulfilled') {
           setSavedPlaces(
@@ -71,6 +84,19 @@ export default function LocationSearchPage() {
         }
         if (profileResult.status === 'fulfilled') {
           setProfile(profileResult.value);
+        }
+        if (autofillResult.status === 'fulfilled' && autofillResult.value?.length > 0) {
+          const matchedPlace = normalizePlace(autofillResult.value[0]);
+          if (matchedPlace) {
+            const finalPlace = {
+              ...matchedPlace,
+              name: autoFillDestination.name,
+              address: matchedPlace.address || autoFillDestination.address,
+            };
+            skipNextSearchRef.current = true;
+            setDestination(finalPlace);
+            setQuery(finalPlace.address || finalPlace.name);
+          }
         }
         if (positionResult.status === 'fulfilled') {
           const position = positionResult.value;
@@ -105,7 +131,7 @@ export default function LocationSearchPage() {
     return () => {
       ignored = true;
     };
-  }, [t]);
+  }, [autoFillDestination?.address, autoFillDestination?.name, t]);
 
   useEffect(() => {
     const text = (activeSearchTarget === 'pickup' ? pickupQuery : query).trim();
@@ -256,17 +282,15 @@ export default function LocationSearchPage() {
 
   return (
     <PageShell>
-      <main className="location-window">
+      <main className="location-search-screen">
         <Topbar
           actions={(
             <>
               <Link to="/home">{t('common.home')}</Link>
               <Link to="/user-info/profile">{t('common.account')}</Link>
-              <ProfileAvatarSlot
-                slot="topbar"
-                src={resolveAssetUrl(profile?.avatarUrl)}
-                fallbackText={profileName}
-              />
+              <Link to="/user-info/profile" className="topbar-avatar-link" aria-label={t('common.account')}>
+                <img className="topbar-avatar" src={resolveAssetUrl(profile?.avatarUrl)} alt="" />
+              </Link>
             </>
           )}
         />

@@ -7,10 +7,12 @@ import PageShell from '../components/PageShell.jsx';
 import Topbar from '../components/Topbar.jsx';
 import { useI18n } from '../i18n/I18nProvider.jsx';
 import { translateApiError } from '../i18n/errors.js';
+import { useChatNotification } from '../contexts/ChatContext.jsx';
 import '../styles/app-pages.css';
 
 export default function DriverAvailablePage() {
   const { t } = useI18n();
+  const { totalUnread } = useChatNotification();
   const [ride, setRide] = useState(null);
   const [status, setStatus] = useState('');
 
@@ -56,7 +58,10 @@ export default function DriverAvailablePage() {
               </div>
               <div className="card-actions">
                 <a className="submit-button" href={`tel:${passenger?.phone || ''}`}>{t('ride.call')}</a>
-                <Link className="secondary-button" to="/messages/customer">{t('common.messages')}</Link>
+                <Link className="secondary-button icon-with-badge" to="/messages/customer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {t('common.messages')}
+                  {totalUnread > 0 && <span className="badge-notification">{totalUnread}</span>}
+                </Link>
               </div>
             </>
           )}

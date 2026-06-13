@@ -14,6 +14,18 @@ export default function RideConfirmPage() {
   const [ride, setRide] = useState(null);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState(null);
+
+  useEffect(() => {
+    let ignored = false;
+    import('../api/customers.js').then(({ fetchCustomerProfile }) => {
+      fetchCustomerProfile()
+        .then(data => { if (!ignored && data) setProfile(data); })
+        .catch(() => {});
+    });
+    return () => { ignored = true; };
+  }, []);
+
   useEffect(() => {
     getActiveRide()
       .then((active) => {
@@ -37,7 +49,7 @@ export default function RideConfirmPage() {
   return (
     <PageShell>
       <main className="app-screen ride-confirm-screen">
-        <Topbar />
+        <Topbar brandTo="/home" actions={<><Link to="/home">{t('common.home')}</Link><Link to="/user-info/profile">{t('common.account')}</Link><Link to="/user-info/profile" className="topbar-avatar-link" aria-label={t('common.account')}><img className="topbar-avatar" src={resolveAssetUrl(profile?.avatarUrl)} alt="" /></Link></>} />
         <section className="app-shell">
           <div className="profile-header">
             <div>

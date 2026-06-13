@@ -3,9 +3,12 @@ import { useI18n } from '../i18n/I18nProvider.jsx';
 import '../styles/footer.css';
 import { getAuthRole } from '../utils/session.js';
 
+import { useChatNotification } from '../contexts/ChatContext.jsx';
+
 export default function Footer() {
   const location = useLocation();
   const { t } = useI18n();
+  const { totalUnread } = useChatNotification();
   const isDriver =
     getAuthRole() === 'driver' ||
     location.pathname.startsWith('/driver') ||
@@ -24,7 +27,10 @@ export default function Footer() {
       </NavLink>
       <div className="divider"></div>
       <NavLink className={({ isActive }) => `bottom-item ${isActive ? 'active' : ''}`} to={messagePath}>
-        <span className="bottom-icon" aria-hidden="true">💬</span>
+        <span className="icon-with-badge">
+          <span className="bottom-icon" aria-hidden="true">💬</span>
+          {totalUnread > 0 && <span className="badge-notification">{totalUnread}</span>}
+        </span>
         <span>{t('common.messages')}</span>
       </NavLink>
       <div className="divider"></div>

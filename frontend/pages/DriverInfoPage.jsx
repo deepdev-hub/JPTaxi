@@ -939,7 +939,7 @@ export default function DriverInfoPage() {
     <PageShell withFooter={false}>
       <main className="app-screen zip-profile-screen">
         <div className="profile-window">
-          <Topbar brandTo="/driver-home" brandExtra={t('brand.forDriver')} actions={<><Link to="/driver-home">{common.home}</Link><Link to="/messages/customer">{common.messages}</Link>{avatar ? <img className="topbar-avatar driver-avatar-top" src={avatar} alt="" /> : <span className="topbar-avatar driver-avatar-top" />}</>} />
+          <Topbar brandTo="/driver-home" brandExtra={t('brand.forDriver')} actions={<><Link to="/driver-home">{t('common.home')}</Link><Link to="/driver-info/basic">{t('common.account')}</Link><Link to="/driver-info/basic" className="topbar-avatar-link"><img className="topbar-avatar driver-avatar-top" src={avatar} alt="" /></Link></>} />
           <section className="profile-page-shell zip-profile-shell">
             <aside className="profile-sidebar">
               <section className="profile-card zip-profile-card driver-profile-card">

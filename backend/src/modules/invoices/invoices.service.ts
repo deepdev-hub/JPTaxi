@@ -300,12 +300,14 @@ export class InvoicesService {
         {
           code: 'TAXI_FARE',
           label: `Taxi fare (${Number(trip.actualDistanceKm).toFixed(1)} km)`,
+          labelJa: `タクシー運賃 (${Number(trip.actualDistanceKm).toFixed(1)} km)`,
           amountJpy: vndToJpy(fareVnd, rate),
           amountVnd: fareVnd,
         },
         {
           code: 'SERVICE_FEE',
           label: 'Booking and dispatch fee',
+          labelJa: '手配料金',
           amountJpy: vndToJpy(serviceFeeVnd, rate),
           amountVnd: serviceFeeVnd,
         },
@@ -326,7 +328,7 @@ export class InvoicesService {
 
   private renderPdf(payload: InvoicePayload): Promise<Buffer> {
     return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ size: 'A4', margin: 48 });
+      const doc = new PDFDocument({ size: 'A4', margin: 50 });
       const chunks: Buffer[] = [];
       doc.on('data', (chunk: Buffer) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -334,29 +336,85 @@ export class InvoicesService {
 
       const trip = payload.trip as Record<string, unknown>;
       const amounts = payload.amounts as {
-        vnd: { subtotalExclTax: number; vatAmount: number; totalInclTax: number };
+        jpy: { totalInclTax: number; vatAmount: number; vatRatePercent: number };
+        vnd: { totalInclTax: number; vatAmount: number };
       };
-      doc.fontSize(20).text('JP TAXI - ELECTRONIC RECEIPT');
-      doc.moveDown();
-      doc.fontSize(11).text(`Invoice: ${String(payload.invoiceNumber)}`);
-      doc.text(`Issued: ${String(payload.issuedAt)}`);
-      doc.text(`Trip: #${String(payload.tripId)}`);
-      doc.moveDown();
-      doc.text(`Pickup: ${String(trip.pickupAddress)}`);
-      doc.text(`Drop-off: ${String(trip.dropoffAddress)}`);
-      doc.text(`Distance: ${String(trip.distanceKm)} km`);
-      doc.moveDown();
+      const payment = payload.payment as Record<string, unknown>;
+      
+      const primaryColor = '#047857';
+      const textColor = '#1e293b';
+      const grayColor = '#64748b';
+      const lightGray = '#e2e8f0';
+
+      const fontPath = require('path').join(process.cwd(), 'NotoSansCJKjp-Regular.otf');
+      doc.registerFont('NotoSans', fontPath);
+
+      // Header
+      doc.fillColor(primaryColor).fontSize(24).font('Helvetica-Bold').text('JP TAXI', 50, 50);
+      
+      doc.fillColor(textColor).fontSize(16).font('NotoSans').text('電子領収書', 50, 55, { align: 'right' });
+      doc.fillColor(grayColor).fontSize(10).font('Helvetica').text(`NO. ${String(payload.invoiceNumber)}`, 50, 75, { align: 'right' });
+      
+      doc.moveDown(3);
+
+      // Grid Details
+      const startY = doc.y;
+      
+      // Col 1
+      doc.fillColor(grayColor).fontSize(9).font('NotoSans').text('乗車日時', 50, startY);
+      doc.fillColor(textColor).fontSize(12).font('NotoSans').text(String(trip.endTime || trip.startTime).replace('T', ' ').substring(0, 16), 50, startY + 15);
+      
+      // Col 2
+      const paymentMethodStr = payment ? `${String(payment.method)} (**** ${String(payment.lastFour)})` : '-';
+      doc.fillColor(grayColor).fontSize(9).font('NotoSans').text('決済方法', 300, startY);
+      doc.fillColor(textColor).fontSize(12).font('NotoSans').text(paymentMethodStr, 300, startY + 15);
+
+      doc.moveDown(2);
+      const row2Y = doc.y;
+
+      // Col 1 - row 2
+      doc.fillColor(grayColor).fontSize(9).font('NotoSans').text('乗車場所', 50, row2Y);
+      doc.fillColor(textColor).fontSize(11).font('NotoSans').text(String(trip.pickupAddress), 50, row2Y + 15, { width: 230 });
+
+      // Col 2 - row 2
+      doc.fillColor(grayColor).fontSize(9).font('NotoSans').text('降車場所', 300, row2Y);
+      doc.fillColor(textColor).fontSize(11).font('NotoSans').text(String(trip.dropoffAddress), 300, row2Y + 15, { width: 230 });
+
+      doc.moveDown(4);
+
+      // Table Header
+      let tableY = doc.y;
+      doc.rect(50, tableY, 495, 25).fill('#f8fafc');
+      doc.fillColor(grayColor).fontSize(10).font('NotoSans').text('項目', 60, tableY + 8);
+      doc.text('金額', 400, tableY + 8, { width: 135, align: 'right' });
+      
+      tableY += 25;
+
+      // Table Rows
+      doc.font('NotoSans').fontSize(11).fillColor(textColor);
       for (const item of payload.lineItems as Array<Record<string, unknown>>) {
-        doc.text(`${String(item.label)}: ${Number(item.amountVnd).toLocaleString()} VND`);
+        tableY += 15;
+        doc.text(String(item.labelJa || item.label), 60, tableY);
+        doc.text(`¥${Number(item.amountJpy).toLocaleString()}`, 400, tableY, { width: 135, align: 'right' });
+        
+        tableY += 20;
+        doc.moveTo(50, tableY).lineTo(545, tableY).lineWidth(1).strokeColor(lightGray).stroke();
       }
-      doc.moveDown();
-      doc.text(
-        `Subtotal: ${amounts.vnd.subtotalExclTax.toLocaleString()} VND`,
-      );
-      doc.text(`VAT: ${amounts.vnd.vatAmount.toLocaleString()} VND`);
-      doc.fontSize(14).text(
-        `Total: ${amounts.vnd.totalInclTax.toLocaleString()} VND`,
-      );
+
+      tableY += 20;
+
+      // Summary
+      doc.fillColor(grayColor).fontSize(12).font('NotoSans').text('領収金額 (税込)', 300, tableY, { width: 245, align: 'right' });
+      tableY += 15;
+      doc.fillColor(primaryColor).fontSize(32).font('NotoSans').text(`¥${amounts.jpy.totalInclTax.toLocaleString()}`, 300, tableY, { width: 245, align: 'right' });
+      tableY += 35;
+      doc.fillColor(grayColor).fontSize(10).font('NotoSans').text(`(内消費税${amounts.jpy.vatRatePercent}% : ¥${amounts.jpy.vatAmount.toLocaleString()})`, 300, tableY, { width: 245, align: 'right' });
+
+      doc.moveDown(5);
+
+      // Footer
+      doc.fillColor(grayColor).fontSize(10).font('NotoSans').text('JP TAXIをご利用いただきありがとうございます。', 50, doc.y, { align: 'center' });
+
       doc.end();
     });
   }

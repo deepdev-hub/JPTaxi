@@ -8,6 +8,7 @@ import PageShell from '../components/PageShell.jsx';
 import Topbar from '../components/Topbar.jsx';
 import '../styles/app-pages.css';
 import { buildSelectedRoute, geocodePlace, getCurrentPosition } from '../utils/routePlanner.js';
+import { normalizePlace } from '../utils/place.js';
 import { getRideContinuationPath, syncActiveRideSession } from '../utils/activeRideNavigation.js';
 import { useI18n } from '../i18n/I18nProvider.jsx';
 
@@ -56,7 +57,7 @@ export default function HomeExperience({ mode = 'user' }) {
         ...place,
         key: place.savedPlaceId,
         title: place.label,
-        icon: place.type === 'home' ? '⌂' : place.type === 'work' ? '■' : '★',
+        icon: place.type === 'home' ? '🏠' : place.type === 'work' ? '🏢' : '★',
       }))
     : content.quickItems;
 
@@ -124,30 +125,17 @@ export default function HomeExperience({ mode = 'user' }) {
       return;
     }
 
-    setQuickLoading(item.key);
+    const normalizedItem = normalizePlace(item);
 
-    try {
-      const [pickup, destination] = await Promise.all([
-        getCurrentPosition(),
-        geocodePlace(item.address),
-      ]);
-      const selectedRoute = await buildSelectedRoute(
-        {
-          ...destination,
+    navigate('/location-search', {
+      state: {
+        autoFillDestination: {
           name: item.title,
-          address: destination.address || item.address,
-        },
-        pickup,
-        { locale, pickupName: t('location.current') },
-      );
-
-      window.sessionStorage.setItem('jpTaxiSelectedRoute', JSON.stringify(selectedRoute));
-      navigate('/bill-confirm');
-    } catch {
-      navigate('/location-search');
-    } finally {
-      setQuickLoading(null);
-    }
+          address: item.address,
+          position: normalizedItem?.position,
+        }
+      }
+    });
   }
 
   return (
@@ -159,9 +147,9 @@ export default function HomeExperience({ mode = 'user' }) {
             <>
               <Link to={content.brandTo}>{t('common.home')}</Link>
               <Link to={isUserMode ? '/user-info/profile' : '/driver-info/basic'}>{t('common.account')}</Link>
-              {profile?.avatarUrl
-                ? <img className="topbar-avatar" src={resolveAssetUrl(profile.avatarUrl)} alt="" />
-                : <span className="topbar-avatar" />}
+              <Link to={isUserMode ? '/user-info/profile' : '/driver-info/basic'} className="topbar-avatar-link" aria-label={t('common.account')}>
+                <img className="topbar-avatar" src={resolveAssetUrl(profile?.avatarUrl)} alt="" />
+              </Link>
             </>
           )}
         />

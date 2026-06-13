@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { getCurrentCustomerId, getCurrentDriverId } from '../api/accounts.js';
+import { getCurrentCustomerId, getCurrentDriverId, resolveAssetUrl } from '../api/accounts.js';
 import {
   createConversation,
   listConversationMessages,
@@ -11,6 +11,7 @@ import {
 import PageShell from '../components/PageShell.jsx';
 import Topbar from '../components/Topbar.jsx';
 import { useChatSocket } from '../hooks/useChatSocket.js';
+import { useChatNotification } from '../contexts/ChatContext.jsx';
 import '../styles/app-pages.css';
 import { getAuthRole } from '../utils/session.js';
 import { useI18n } from '../i18n/I18nProvider.jsx';
@@ -68,6 +69,7 @@ function appendMessageOnce(items, message) {
 
 export default function MessagesPage() {
   const { locale, t } = useI18n();
+  const { decreaseUnread, refreshUnread } = useChatNotification();
   const { audience } = useParams();
   const [searchParams] = useSearchParams();
   const isDriver = getCurrentRole() === 'driver' || audience === 'customer';
@@ -82,12 +84,27 @@ export default function MessagesPage() {
   const [selectedConversationId, setSelectedConversationId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
-  const [loadingConversations, setLoadingConversations] = useState(false);
-  const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [profile, setProfile] = useState(null);
+  const [loadingConversations, setLoadingConversations] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const viewportRef = useRef(null);
   const requestedPeerRef = useRef(false);
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    let ignored = false;
+    const fetchProfile = isDriver
+      ? import('../api/accounts.js').then(m => m.getDriverProfile)
+      : import('../api/customers.js').then(m => m.fetchCustomerProfile);
+    
+    fetchProfile.then(fn => fn()).then(data => {
+      if (!ignored && data) setProfile(data);
+    }).catch(() => {});
+    
+    return () => { ignored = true; };
+  }, [isDriver]);
 
   const selectedConversation = useMemo(
     () => conversations.find((c) => c.conversationId === selectedConversationId) || null,
@@ -122,15 +139,21 @@ export default function MessagesPage() {
       const data = await listConversationMessages(conversationId, { limit: 50 });
       setMessages((data?.items || []).map((message) => normalizeMessageOwner(message, isDriver)));
       await markConversationRead(conversationId);
-      setConversations((prev) => prev.map((item) => (
-        item.conversationId === conversationId ? { ...item, unreadCount: 0 } : item
-      )));
+      setConversations((prev) => {
+        const item = prev.find(i => i.conversationId === conversationId);
+        if (item && item.unreadCount > 0) {
+          decreaseUnread(item.unreadCount);
+        }
+        return prev.map((item) => (
+          item.conversationId === conversationId ? { ...item, unreadCount: 0 } : item
+        ));
+      });
     } catch (err) {
       setError(t('messages.loadFailed'));
     } finally {
       setLoadingMessages(false);
     }
-  }, [isDriver, t]);
+  }, [isDriver, t, decreaseUnread]);
 
   useEffect(() => {
     refreshConversations();
@@ -165,8 +188,11 @@ export default function MessagesPage() {
   }, [selectedConversationId, loadMessages]);
 
   useEffect(() => {
-    if (!viewportRef.current) return;
-    viewportRef.current.scrollTop = viewportRef.current.scrollHeight;
+    if (!messagesEndRef.current) return;
+    const timer = setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }, 50);
+    return () => clearTimeout(timer);
   }, [messages]);
 
   const handleNewMessage = useCallback((payload) => {
@@ -189,8 +215,9 @@ export default function MessagesPage() {
     if (incomingConversationId === selectedConversationId) {
       setMessages((prev) => appendMessageOnce(prev, incomingMessage));
       markConversationRead(selectedConversationId).catch(() => {});
+      decreaseUnread(1);
     }
-  }, [isDriver, selectedConversationId]);
+  }, [isDriver, selectedConversationId, decreaseUnread]);
 
   useChatSocket({
     conversationId: selectedConversationId,
@@ -225,7 +252,7 @@ export default function MessagesPage() {
   return (
     <PageShell>
       <main className="messages-window">
-        <Topbar brandTo={homePath} actions={<><Link to={homePath}>{t('common.home')}</Link><Link to={messagePath} className="active-header-link">{t('common.messages')}</Link><Link to={accountPath}>{t('common.account')}</Link></>} />
+        <Topbar brandTo={homePath} actions={<><Link to={homePath}>{t('common.home')}</Link><Link to={accountPath}>{t('common.account')}</Link><Link to={accountPath} className="topbar-avatar-link"><img className="topbar-avatar" src={resolveAssetUrl(profile?.avatarUrl)} alt="" /></Link></>} />
         {error ? <p className="messages-error">{error}</p> : null}
 
         <section className="zip-chat-container">
@@ -292,6 +319,7 @@ export default function MessagesPage() {
                       </div>
                     );
                   })}
+                  <div ref={messagesEndRef} style={{ float: 'left', clear: 'both' }} />
                 </div>
 
                 <footer className="zip-input-area">

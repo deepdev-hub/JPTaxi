@@ -15,6 +15,7 @@ import Topbar from '../components/Topbar.jsx';
 import { useRideSocket } from '../hooks/useRideSocket.js';
 import { useI18n } from '../i18n/I18nProvider.jsx';
 import { translateApiError } from '../i18n/errors.js';
+import { useChatNotification } from '../contexts/ChatContext.jsx';
 import { setLastInvoiceTripId } from '../utils/invoiceSession.js';
 import { formatDistance, formatDuration } from '../utils/routePlanner.js';
 import '../styles/app-pages.css';
@@ -32,6 +33,7 @@ function watchDriverLocation(onLocation) {
 export default function DriverRideStatusPage() {
   const navigate = useNavigate();
   const { locale, t } = useI18n();
+  const { totalUnread } = useChatNotification();
   const [ride, setRide] = useState(null);
   const [profile, setProfile] = useState(null);
   const [driverLocation, setDriverLocation] = useState(null);
@@ -207,7 +209,10 @@ export default function DriverRideStatusPage() {
                 </div>
               </div>
               <div className="tracking-actions">
-                <Link className="tracking-call" to={`/messages/customer?peerId=${passenger?.customerId || ''}`}>{t('common.messages')}</Link>
+                <Link className="tracking-call icon-with-badge" to={`/messages/customer?peerId=${passenger?.customerId || ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {t('common.messages')}
+                  {totalUnread > 0 && <span className="badge-notification">{totalUnread}</span>}
+                </Link>
                 <button className="tracking-message" disabled={busy} onClick={requestPayment} type="button">{t('ride.requestPayment')}</button>
                 <button className="tracking-cancel-ride" disabled={busy} onClick={cancelRide} type="button">{t('ride.cancelTrip')}</button>
               </div>
