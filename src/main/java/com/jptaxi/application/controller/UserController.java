@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.jptaxi.application.dto.CreateUserRequest;
 import com.jptaxi.application.dto.ForgotPasswordRequest;
@@ -29,8 +31,11 @@ import com.jptaxi.application.entity.User;
 import com.jptaxi.application.entity.UserRole;
 import com.jptaxi.application.repository.UserRepository;
 import com.jptaxi.application.service.DtoMapper;
+import com.jptaxi.application.service.ImageValidationException;
 import com.jptaxi.application.service.PasswordResetEmailService;
 import com.jptaxi.application.service.PasswordResetTokenService;
+import com.jptaxi.application.service.StorageImageType;
+import com.jptaxi.application.service.SupabaseStorageService;
 
 @RestController
 @RequestMapping("/api/users")
@@ -46,6 +51,7 @@ public class UserController {
     private final DtoMapper mapper;
     private final PasswordResetTokenService passwordResetTokenService;
     private final PasswordResetEmailService passwordResetEmailService;
+    private final SupabaseStorageService storageService;
     private final String resetPasswordUrl;
 
     public UserController(
@@ -53,12 +59,14 @@ public class UserController {
             DtoMapper mapper,
             PasswordResetTokenService passwordResetTokenService,
             PasswordResetEmailService passwordResetEmailService,
+            SupabaseStorageService storageService,
             @Value("${app.frontend.reset-password-url:http://localhost:5173/reset-password}") String resetPasswordUrl
     ) {
         this.userRepository = userRepository;
         this.mapper = mapper;
         this.passwordResetTokenService = passwordResetTokenService;
         this.passwordResetEmailService = passwordResetEmailService;
+        this.storageService = storageService;
         this.resetPasswordUrl = resetPasswordUrl;
     }
 
@@ -175,6 +183,29 @@ public class UserController {
                     return ResponseEntity.ok(mapper.toUserDto(userRepository.save(user)));
                 })
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping(value = "/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Transactional
+    public ResponseEntity<?> uploadAvatar(
+            @RequestParam("userId") String userId,
+            @RequestParam("image") MultipartFile image
+    ) {
+        if (userId == null || userId.isBlank()) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("message", "User id is required"));
+        }
+
+        try {
+            String avatarUrl = storageService.upload(image, StorageImageType.AVATAR);
+            return userRepository.findById(userId)
+                    .map(user -> {
+                        user.setAvatar(avatarUrl);
+                        return ResponseEntity.ok(mapper.toUserDto(userRepository.save(user)));
+                    })
+                    .orElseGet(() -> ResponseEntity.notFound().build());
+        } catch (ImageValidationException exception) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("message", exception.getMessage()));
+        }
     }
 
     private boolean passwordMatches(String rawPassword, String storedPassword) {

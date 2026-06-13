@@ -6,6 +6,7 @@ import {
   Share2, QrCode, ChevronLeft, ExternalLink, Camera, ArrowRight
 } from "lucide-react";
 import { getRestaurant, getReviews, reactToReview } from "../api/client";
+import { getPublicAppUrl } from "../api/client";
 import type { Restaurant, Review } from "../types";
 import { StarRating } from "../components/StarRating";
 import { useAuth } from "../context/AuthContext";
@@ -29,7 +30,7 @@ export function RestaurantDetailPage() {
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [qrImageUrl, setQrImageUrl] = useState("");
-  const shareUrl = `http://localhost:5173/restaurant/${id ?? ""}`;
+  const shareUrl = `${getPublicAppUrl()}/restaurant/${id ?? ""}`;
 
   useEffect(() => {
     if (!id) return;

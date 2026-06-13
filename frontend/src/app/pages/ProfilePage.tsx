@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router";
-import { User, Mail, Phone, MapPin, Lock, Save, Store, Camera, CheckCircle } from "lucide-react";
-import { updateUser } from "../api/client";
+import { User, Mail, Phone, MapPin, Lock, Save, Store, Camera, CheckCircle, AlertCircle } from "lucide-react";
+import { updateUser, uploadAvatarImage } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 
@@ -20,6 +20,8 @@ export function ProfilePage() {
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
   const [activeTab, setActiveTab] = useState<"profile" | "password">("profile");
 
   useEffect(() => {
@@ -53,6 +55,28 @@ export function ProfilePage() {
     setPasswords({ current: "", new: "", confirm: "" });
   };
 
+  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    setAvatarError("");
+
+    if (!file || avatarUploading) return;
+    if (!file.type.startsWith("image/")) {
+      setAvatarError("Vui lòng chọn file ảnh hợp lệ.");
+      return;
+    }
+
+    setAvatarUploading(true);
+    try {
+      const savedUser = await uploadAvatarImage(currentUser.id, file);
+      await updateProfile({ avatar: savedUser.avatar });
+    } catch (error) {
+      setAvatarError(error instanceof Error ? error.message : "Không thể tải ảnh đại diện.");
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   const roleLabel = currentUser.role === "owner" ? t.profile.ownerRole : t.profile.dinerRole;
   const roleBadgeColor = currentUser.role === "owner" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700";
 
@@ -70,9 +94,15 @@ export function ProfilePage() {
                   <User className="w-10 h-10 text-blue-400" />
                 )}
               </div>
-              <button className="absolute bottom-0 right-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-md hover:bg-blue-700 transition-colors">
+              <label className="absolute bottom-0 right-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-md hover:bg-blue-700 transition-colors cursor-pointer">
                 <Camera className="w-4 h-4" />
-              </button>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handleAvatarChange}
+                  className="hidden"
+                />
+              </label>
             </div>
             <div className="text-center sm:text-left">
               <h1 className="text-gray-900">{currentUser.name}</h1>
@@ -100,6 +130,12 @@ export function ProfilePage() {
           <div className="flex items-center gap-2 p-3 mb-4 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">
             <CheckCircle className="w-4 h-4" />
             {t.profile.saved}
+          </div>
+        )}
+        {avatarError && (
+          <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+            <AlertCircle className="w-4 h-4" />
+            {avatarError}
           </div>
         )}
 

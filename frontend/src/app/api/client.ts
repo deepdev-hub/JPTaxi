@@ -2,9 +2,17 @@ import type { Conversation, MenuItem, Message, Restaurant, Review, Role, User } 
 
 const rawApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || "http://localhost:8081/api";
 const API_BASE_URL = rawApiBaseUrl.replace(/\/+$/, "");
+const rawPublicAppUrl = import.meta.env.VITE_PUBLIC_APP_URL?.trim() || "";
+const PUBLIC_APP_URL = rawPublicAppUrl.replace(/\/+$/, "");
 
 function buildApiUrl(path: string) {
   return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+export function getPublicAppUrl() {
+  if (PUBLIC_APP_URL) return PUBLIC_APP_URL;
+  if (typeof window !== "undefined" && window.location?.origin) return window.location.origin;
+  return "http://localhost:5173";
 }
 
 const DEFAULT_FOOD_TAGS = [
@@ -161,6 +169,13 @@ export function uploadMenuImage(imageFile: File) {
   const formData = new FormData();
   formData.append("image", imageFile);
   return requestForm<{ url: string }>("/restaurants/menu-images", formData);
+}
+
+export function uploadAvatarImage(userId: string, imageFile: File) {
+  const formData = new FormData();
+  formData.append("userId", userId);
+  formData.append("image", imageFile);
+  return requestForm<User>("/users/avatar", formData);
 }
 
 export function getReviews(restaurantId?: string, userId?: string) {

@@ -20,6 +20,7 @@ import com.jptaxi.application.service.DtoMapper;
 import com.jptaxi.application.service.PasswordResetEmailService;
 import com.jptaxi.application.service.PasswordResetTokenService;
 import com.jptaxi.application.service.ResendEmailException;
+import com.jptaxi.application.service.SupabaseStorageService;
 
 class UserControllerPasswordResetTests {
 
@@ -97,6 +98,7 @@ class UserControllerPasswordResetTests {
                 mock(DtoMapper.class),
                 tokenService,
                 emailService,
+                mock(SupabaseStorageService.class),
                 "http://localhost:5173/reset-password"
         );
     }

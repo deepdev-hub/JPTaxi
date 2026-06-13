@@ -3,7 +3,8 @@ package com.jptaxi.application.service;
 public enum StorageImageType {
     RESTAURANT("restaurants", "restaurant-"),
     MENU_ITEM("menu-items", "menu-"),
-    REVIEW("reviews", "review-");
+    REVIEW("reviews", "review-"),
+    AVATAR("avatars", "avatar-");
 
     private final String directory;
     private final String filePrefix;
