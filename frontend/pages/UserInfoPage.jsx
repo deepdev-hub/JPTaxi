@@ -14,9 +14,12 @@ import {
 import { changePassword } from '../api/auth.js';
 import {
   addPaymentMethod,
+  deleteSavedPlace,
   getLoginHistory,
   getNotificationPreferences,
   getPaymentMethods,
+  getSavedPlaces,
+  savePlace,
   updateNotificationPreferences,
 } from '../api/customers.js';
 import {
@@ -101,6 +104,20 @@ const emptyProfile = {
   loginHistory: [],
 };
 
+const savedPlaceTypes = ['home', 'work', 'favorite'];
+
+function mapSavedPlaceDrafts(places = []) {
+  return savedPlaceTypes.reduce((drafts, type) => {
+    const place = places.find((item) => item?.type === type);
+    drafts[type] = place?.address || '';
+    return drafts;
+  }, {
+    home: '',
+    work: '',
+    favorite: '',
+  });
+}
+
 function normalizeProfile(profile = {}) {
   return {
     ...emptyProfile,
@@ -139,6 +156,17 @@ function formatDate(value, locale = 'ja-JP') {
   return new Date(value).toLocaleDateString(locale);
 }
 
+function getReadableError(error, fallback) {
+  const message = typeof error?.message === 'string' ? error.message.trim() : '';
+  return message || fallback;
+}
+
+function getSavedPlaceLabel(type) {
+  if (type === 'home') return 'Home';
+  if (type === 'work') return 'Work';
+  return 'Favorite';
+}
+
 export default function UserInfoPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -171,6 +199,13 @@ export default function UserInfoPage() {
   const [loginHistory, setLoginHistory] = useState([]);
   const [loginHistoryLoading, setLoginHistoryLoading] = useState(false);
   const [loginHistoryError, setLoginHistoryError] = useState('');
+  const [savedPlaces, setSavedPlaces] = useState([]);
+  const [savedPlaceDrafts, setSavedPlaceDrafts] = useState({
+    home: '',
+    work: '',
+    favorite: '',
+  });
+  const [savedPlaceSaving, setSavedPlaceSaving] = useState('');
   const avatarCropperRef = useRef(null);
   const text = profileText[language] || profileText.ja;
   const common = text.common;
@@ -181,15 +216,19 @@ export default function UserInfoPage() {
     async function loadProfile() {
       setLoading(true);
       try {
-        const [data, preferences, methods] = await Promise.all([
+        const [data, preferences, methods, places] = await Promise.all([
           getCustomerProfile(),
           getNotificationPreferences(),
           getPaymentMethods(),
+          getSavedPlaces(),
         ]);
         if (!ignore) {
           setProfile(normalizeProfile(data));
           setNotifications(preferences);
           setPaymentMethods(Array.isArray(methods) ? methods : []);
+          const nextPlaces = Array.isArray(places) ? places.filter(Boolean) : [];
+          setSavedPlaces(nextPlaces);
+          setSavedPlaceDrafts(mapSavedPlaceDrafts(nextPlaces));
         }
       } catch (error) {
         if (!ignore) setStatus(translateApiError(error, t, text.status.userLoadFailed));
@@ -256,6 +295,51 @@ export default function UserInfoPage() {
 
   function updateField(field, value) {
     setProfile((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateSavedPlaceDraft(type, value) {
+    setSavedPlaceDrafts((current) => ({ ...current, [type]: value }));
+  }
+
+  async function persistSavedPlace(type, explicitAddress) {
+    const address = String(explicitAddress ?? savedPlaceDrafts[type] ?? '').trim();
+    const existingPlace = savedPlaces.find((item) => item?.type === type);
+
+    if (!address) {
+      if (!existingPlace) return;
+      await deleteSavedPlace(existingPlace.savedPlaceId);
+      const remaining = savedPlaces.filter((item) => item.savedPlaceId !== existingPlace.savedPlaceId);
+      setSavedPlaces(remaining);
+      setSavedPlaceDrafts(mapSavedPlaceDrafts(remaining));
+      return;
+    }
+
+    const saved = await savePlace(type, {
+      label: getSavedPlaceLabel(type),
+      address,
+    });
+
+    const nextPlaces = savedPlaces
+      .filter((item) => item?.type !== type)
+      .concat(saved)
+      .sort((a, b) => Number(a.savedPlaceId) - Number(b.savedPlaceId));
+    setSavedPlaces(nextPlaces);
+    setSavedPlaceDrafts(mapSavedPlaceDrafts(nextPlaces));
+  }
+
+  async function saveSavedPlace(type) {
+    setSavedPlaceSaving(type);
+    try {
+      await persistSavedPlace(type);
+      setStatus(text.status.dbSaved);
+    } catch (error) {
+      setStatus(getReadableError(
+        error,
+        translateApiError(error, t, text.status.userSaveFailed),
+      ));
+    } finally {
+      setSavedPlaceSaving('');
+    }
   }
 
   function handleAvatarChange(event) {
@@ -338,12 +422,16 @@ export default function UserInfoPage() {
         email: profile.email,
         avatarUrl: profile.avatarUrl || null,
       });
+      await persistSavedPlace('home', savedPlaceDrafts.home);
       setProfile(normalizeProfile(updated));
       setModal('saved');
       setStatus(text.status.dbSaved);
     } catch (error) {
       setModal('error');
-      setStatus(translateApiError(error, t, text.status.userSaveFailed));
+      setStatus(getReadableError(
+        error,
+        translateApiError(error, t, text.status.userSaveFailed),
+      ));
     }
   }
 
@@ -612,7 +700,14 @@ export default function UserInfoPage() {
                 </select>
               </label>
               <label><span>{common.phone}</span><input value={profile.phone} onChange={(event) => updateField('phone', event.target.value)} /></label>
-              <label className="field full"><span>{userText.address}</span><input value="" disabled placeholder="Manage addresses in saved places" /></label>
+              <label className="field full">
+                <span>{userText.address}</span>
+                <input
+                  value={savedPlaceDrafts.home}
+                  onChange={(event) => updateSavedPlaceDraft('home', event.target.value)}
+                  placeholder="Home address"
+                />
+              </label>
             </div>
           </section>
 
@@ -639,6 +734,30 @@ export default function UserInfoPage() {
                   </label>
                 );
               })}
+            </div>
+          </section>
+
+          <section className="panel zip-profile-panel stack">
+            <h2 className="panel-title">{t('home.savedPlaces')}</h2>
+            <div className="setting-list">
+              {savedPlaceTypes.map((type) => (
+                <article className="account-card" key={type}>
+                  <strong>{type === 'home' ? 'Home' : type === 'work' ? 'Work' : 'Favorite'}</strong>
+                  <input
+                    value={savedPlaceDrafts[type]}
+                    onChange={(event) => updateSavedPlaceDraft(type, event.target.value)}
+                    placeholder={`${type === 'home' ? 'Home' : type === 'work' ? 'Work' : 'Favorite'} address`}
+                  />
+                  <button
+                    className="link-btn"
+                    type="button"
+                    onClick={() => saveSavedPlace(type)}
+                    disabled={savedPlaceSaving === type}
+                  >
+                    {savedPlaceSaving === type ? common.loading : common.save}
+                  </button>
+                </article>
+              ))}
             </div>
           </section>
         </div>

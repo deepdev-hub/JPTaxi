@@ -9,9 +9,12 @@ import {
 } from '../api/accounts.js';
 import {
   addPaymentMethod,
+  deleteSavedPlace,
   getLoginHistory,
   getNotificationPreferences,
   getPaymentMethods,
+  getSavedPlaces,
+  savePlace,
 } from '../api/customers.js';
 import { I18nProvider } from '../i18n/I18nProvider.jsx';
 import UserInfoPage from './UserInfoPage.jsx';
@@ -29,9 +32,12 @@ vi.mock('../api/auth.js', () => ({
 
 vi.mock('../api/customers.js', () => ({
   addPaymentMethod: vi.fn(),
+  deleteSavedPlace: vi.fn(),
   getLoginHistory: vi.fn(),
   getNotificationPreferences: vi.fn(),
   getPaymentMethods: vi.fn(),
+  getSavedPlaces: vi.fn(),
+  savePlace: vi.fn(),
   updateNotificationPreferences: vi.fn(),
 }));
 
@@ -82,6 +88,16 @@ describe('UserInfoPage', () => {
     });
     getPaymentMethods.mockResolvedValue([]);
     getLoginHistory.mockResolvedValue([]);
+    getSavedPlaces.mockResolvedValue([]);
+    savePlace.mockResolvedValue({
+      savedPlaceId: 1,
+      type: 'home',
+      label: 'Home',
+      address: 'Hoan Kiem, Hanoi',
+      latitude: null,
+      longitude: null,
+    });
+    deleteSavedPlace.mockResolvedValue({ deleted: true });
   });
 
   it('shows card validation inside the modal without calling the API', async () => {
@@ -305,7 +321,8 @@ describe('UserInfoPage', () => {
       fileInput,
       new File(['source'], 'portrait.png', { type: 'image/png' }),
     );
-    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getAllByRole('button', { name: /^save$/i }).at(-1));
 
     expect(uploadAvatar).toHaveBeenCalledWith(expect.objectContaining({
       name: 'avatar.jpg',
@@ -353,12 +370,39 @@ describe('UserInfoPage', () => {
       fileInput,
       new File(['source'], 'portrait.png', { type: 'image/png' }),
     );
-    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getAllByRole('button', { name: /^save$/i }).at(-1));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Something went wrong. Please try again.',
     );
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(updateCustomerProfile).not.toHaveBeenCalled();
+  });
+
+  it('saves the home address from the profile screen into saved places', async () => {
+    const user = userEvent.setup();
+    renderPage('profile');
+
+    const addressInput = (await screen.findAllByPlaceholderText('Home address'))[0];
+    await user.type(addressInput, 'Hoan Kiem, Hanoi');
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    expect(savePlace).toHaveBeenCalledWith('home', expect.objectContaining({
+      label: 'Home',
+      address: 'Hoan Kiem, Hanoi',
+    }));
+  });
+
+  it('shows the API error when saving a quick address fails', async () => {
+    const user = userEvent.setup();
+    savePlace.mockRejectedValueOnce(new Error('Unable to save saved place.'));
+    renderPage('profile');
+
+    const addressInput = (await screen.findAllByPlaceholderText('Home address'))[0];
+    await user.type(addressInput, 'invalid raw address');
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    expect((await screen.findAllByText('Unable to save saved place.')).length).toBeGreaterThan(0);
   });
 });

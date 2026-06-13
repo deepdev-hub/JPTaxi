@@ -35,11 +35,11 @@ export class CustomerSavedPlace {
   @Column({ type: 'varchar', length: 255 })
   address: string;
 
-  @Column({ type: 'decimal', precision: 10, scale: 8 })
-  latitude: string;
+  @Column({ type: 'decimal', precision: 10, scale: 8, nullable: true })
+  latitude: string | null;
 
-  @Column({ type: 'decimal', precision: 11, scale: 8 })
-  longitude: string;
+  @Column({ type: 'decimal', precision: 11, scale: 8, nullable: true })
+  longitude: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

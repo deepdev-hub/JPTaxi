@@ -34,45 +34,123 @@ export async function fetchDrivingRoute(fromPosition, toPosition, options = {}) 
   };
 }
 
-export function getCurrentPosition() {
+export function getCurrentPosition(options = {}) {
+  const timeoutMs = Number(options.timeoutMs ?? 12000);
+  const settleMs = Number(options.settleMs ?? 1500);
+  const targetAccuracyMeters = Number(options.targetAccuracyMeters ?? 200);
+
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
       reject(new Error('Geolocation is not available.'));
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => resolve({
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-      }),
-      () => reject(new Error('Unable to get the current location.')),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+
+    let resolved = false;
+    let watchId = null;
+    let bestCoords = null;
+    let settleTimer = null;
+    let timeoutId = null;
+
+    const cleanup = () => {
+      if (watchId != null) navigator.geolocation.clearWatch(watchId);
+      if (settleTimer) window.clearTimeout(settleTimer);
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+
+    const finishWithBest = () => {
+      if (resolved) return;
+      if (!bestCoords) {
+        resolved = true;
+        cleanup();
+        reject(new Error('Unable to get the current location.'));
+        return;
+      }
+      resolved = true;
+      cleanup();
+      resolve({
+        latitude: bestCoords.latitude,
+        longitude: bestCoords.longitude,
+        accuracy: bestCoords.accuracy,
+      });
+    };
+
+    const scheduleFinish = () => {
+      if (settleTimer) window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(finishWithBest, settleMs);
+    };
+
+    watchId = navigator.geolocation.watchPosition(
+      ({ coords }) => {
+        const nextCoords = {
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          accuracy: Number(coords.accuracy) || Number.POSITIVE_INFINITY,
+        };
+
+        if (!bestCoords || nextCoords.accuracy <= bestCoords.accuracy) {
+          bestCoords = nextCoords;
+        }
+
+        if (bestCoords.accuracy <= targetAccuracyMeters) {
+          finishWithBest();
+          return;
+        }
+
+        scheduleFinish();
+      },
+      () => {
+        if (!bestCoords) {
+          resolved = true;
+          cleanup();
+          reject(new Error('Unable to get the current location.'));
+        } else {
+          finishWithBest();
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: timeoutMs,
+        maximumAge: 0,
+      },
     );
+
+    timeoutId = window.setTimeout(finishWithBest, timeoutMs);
   });
 }
 
 export async function geocodePlace(address) {
-  const [result] = await geocodePlaces(address);
-  const latitude = Number(result?.lat);
-  const longitude = Number(result?.lon);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-    throw new Error('Place not found.');
+  const queries = [
+    address,
+    `${address}, Hanoi, Vietnam`,
+    `${address}, Vietnam`,
+    `${address}, Japan`,
+  ].map((item) => String(item ?? '').trim()).filter(Boolean);
+
+  for (const query of queries) {
+    const [result] = await geocodePlaces(query);
+    const latitude = Number(result?.lat);
+    const longitude = Number(result?.lon);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      continue;
+    }
+    const displayParts = String(result.display_name ?? '')
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const namedetails = result.namedetails ?? {};
+    return {
+      name:
+        namedetails['name:ja'] ||
+        namedetails['official_name:ja'] ||
+        result.name ||
+        displayParts[0] ||
+        address,
+      address: displayParts.slice(0, 4).join(', ') || result.display_name || address,
+      position: [latitude, longitude],
+    };
   }
-  const displayParts = String(result.display_name ?? '')
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean);
-  const namedetails = result.namedetails ?? {};
-  return {
-    name:
-      namedetails['name:ja'] ||
-      namedetails['official_name:ja'] ||
-      result.name ||
-      displayParts[0] ||
-      address,
-    address: displayParts.slice(1, 4).join(', ') || result.display_name || address,
-    position: [latitude, longitude],
-  };
+
+  throw new Error('Unable to locate this address on the map.');
 }
 
 export async function buildSelectedRoute(

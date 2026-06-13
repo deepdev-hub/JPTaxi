@@ -194,7 +194,7 @@ export default function InteractiveRouteMap({
       () => {
         setBrowserLocation(null);
       },
-      { enableHighAccuracy: true, maximumAge: 30000, timeout: 7000 },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 7000 },
     );
   }, [currentLocation, showCurrentLocation]);
 

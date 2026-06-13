@@ -26,13 +26,15 @@ export class UpsertSavedPlaceDto {
   @Length(1, 255)
   address: string;
 
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  latitude: number;
+  latitude?: number;
 
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  longitude: number;
+  longitude?: number;
 }
 
 export class UpdateNotificationPreferencesDto {

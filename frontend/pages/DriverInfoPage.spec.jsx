@@ -70,10 +70,13 @@ describe('DriverInfoPage payout localization', () => {
 
   it('stores a current location before enabling driver availability', async () => {
     navigator.geolocation = {
-      getCurrentPosition: vi.fn((success) => success({
-        coords: { latitude: 21.03, longitude: 105.85 },
-      })),
-      watchPosition: vi.fn(() => 7),
+      getCurrentPosition: vi.fn(),
+      watchPosition: vi.fn((success) => {
+        success({
+          coords: { latitude: 21.03, longitude: 105.85, accuracy: 20 },
+        });
+        return 7;
+      }),
       clearWatch: vi.fn(),
     };
     updateDriverLocation.mockResolvedValue({});
@@ -106,8 +109,11 @@ describe('DriverInfoPage payout localization', () => {
   it('keeps the driver offline when browser location permission fails', async () => {
     localStorage.setItem('jpTaxiLanguage', 'en');
     navigator.geolocation = {
-      getCurrentPosition: vi.fn((_success, failure) => failure(new Error('denied'))),
-      watchPosition: vi.fn(),
+      getCurrentPosition: vi.fn(),
+      watchPosition: vi.fn((_success, failure) => {
+        failure(new Error('denied'));
+        return 8;
+      }),
       clearWatch: vi.fn(),
     };
 
