@@ -83,7 +83,7 @@ export default function InvoicePage() {
     }
   }
 
-  const closePath = role === 'driver' ? '/driver-home' : '/driver-review';
+  const closePath = role === 'driver' ? '/driver-home' : '/home';
 
   return (
     <PageShell withFooter={false}>
@@ -99,6 +99,24 @@ export default function InvoicePage() {
             </div>
           ) : null}
           {status && invoice ? <p className="payment-status-text" role="status">{status}</p> : null}
+          {role !== 'driver' && (
+            <Link 
+              to="/driver-review" 
+              style={{
+                display: 'block',
+                textAlign: 'center',
+                margin: '1rem 0',
+                padding: '0.8rem',
+                backgroundColor: '#006B52',
+                color: 'white',
+                textDecoration: 'none',
+                fontWeight: 'bold',
+                borderRadius: '8px'
+              }}
+            >
+              ★ {t('invoice.rateDriver')}
+            </Link>
+          )}
           <Link className="invoice-close" to={closePath}>
             {t('common.close')}
           </Link>

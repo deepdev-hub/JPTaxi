@@ -14,7 +14,7 @@ export function buildPaymentPayload({
   if (!methodCode || (!isSimulated && !paymentMethod?.paymentMethodId)) {
     throw new Error('Select a saved payment method.');
   }
-  if (!String(password ?? '').trim()) {
+  if (methodCode !== 'CASH' && !String(password ?? '').trim()) {
     throw new Error('Enter your account password.');
   }
   const payload = {

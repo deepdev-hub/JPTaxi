@@ -163,16 +163,18 @@ export default function PaymentPage() {
                   <button onClick={() => setMethodOpen(true)} type="button">{t('payment.change')}</button>
                 </section>
 
-                <label className="payment-field">
-                  {t('payment.accountPassword')}
-                  <input
-                    autoComplete="current-password"
-                    onChange={(event) => setPassword(event.target.value)}
-                    required
-                    type="password"
-                    value={password}
-                  />
-                </label>
+                {selectedMethod?.code !== 'CASH' && (
+                  <label className="payment-field">
+                    {t('payment.accountPassword')}
+                    <input
+                      autoComplete="current-password"
+                      onChange={(event) => setPassword(event.target.value)}
+                      required
+                      type="password"
+                      value={password}
+                    />
+                  </label>
+                )}
 
                 {status ? <p className="payment-status-text" role="alert">{status}</p> : null}
                 <div className="receipt-actions">

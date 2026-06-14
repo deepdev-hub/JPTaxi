@@ -5,6 +5,7 @@ import {
   IsString,
   Length,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { PaymentMethodEnum } from '../../../entities/payment-transaction.entity';
 
@@ -23,7 +24,8 @@ export class ProcessPaymentDto {
   @Length(8, 100)
   idempotencyKey: string;
 
+  @ValidateIf((o) => o.paymentMethod !== PaymentMethodEnum.CASH)
   @IsString()
   @MinLength(6)
-  password: string;
+  password?: string;
 }

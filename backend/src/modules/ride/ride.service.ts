@@ -11,7 +11,7 @@ import * as bcrypt from 'bcryptjs';
 import { RideRequest, RideRequestStatusType } from '../../entities/ride-request.entity';
 import { Trip, TripStatusType } from '../../entities/trip.entity';
 import { Customer } from '../../entities/customer.entity';
-import { PaymentTransaction, PaymentStatusType } from '../../entities/payment-transaction.entity';
+import { PaymentTransaction, PaymentStatusType, PaymentMethodEnum } from '../../entities/payment-transaction.entity';
 import { DriverPayout, PayoutStatusType } from '../../entities/driver-payout.entity';
 import { DriverLocationHistory } from '../../entities/driver-location-history.entity';
 import { Driver } from '../../entities/driver.entity';
@@ -1249,13 +1249,15 @@ export class RideService {
         throw new ForbiddenException('You cannot pay for this trip');
       }
 
-      const customer = await manager.getRepository(Customer)
-        .createQueryBuilder('customer')
-        .addSelect('customer.passwordHash')
-        .where('customer.customer_id = :customerId', { customerId })
-        .getOne();
-      if (!customer || !(await bcrypt.compare(dto.password, customer.passwordHash))) {
-        throw new BadRequestException('Confirmation password is incorrect');
+      if (dto.paymentMethod !== PaymentMethodEnum.CASH) {
+        const customer = await manager.getRepository(Customer)
+          .createQueryBuilder('customer')
+          .addSelect('customer.passwordHash')
+          .where('customer.customer_id = :customerId', { customerId })
+          .getOne();
+        if (!customer || !(await bcrypt.compare(dto.password || '', customer.passwordHash))) {
+          throw new BadRequestException('Confirmation password is incorrect');
+        }
       }
 
       const existingByKey = await paymentRepo.findOne({
