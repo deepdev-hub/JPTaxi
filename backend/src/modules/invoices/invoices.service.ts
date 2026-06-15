@@ -394,8 +394,15 @@ export class InvoicesService {
       doc.font('NotoSans').fontSize(11).fillColor(textColor);
       for (const item of payload.lineItems as Array<Record<string, unknown>>) {
         tableY += 15;
+        doc.fillColor(textColor).fontSize(11);
         doc.text(String(item.labelJa || item.label), 60, tableY);
         doc.text(`¥${Number(item.amountJpy).toLocaleString()}`, 400, tableY, { width: 135, align: 'right' });
+        
+        if (item.amountVnd != null) {
+          tableY += 15;
+          doc.fillColor(grayColor).fontSize(9);
+          doc.text(`${Number(item.amountVnd).toLocaleString()} VND`, 400, tableY, { width: 135, align: 'right' });
+        }
         
         tableY += 20;
         doc.moveTo(50, tableY).lineTo(545, tableY).lineWidth(1).strokeColor(lightGray).stroke();
@@ -408,6 +415,10 @@ export class InvoicesService {
       tableY += 15;
       doc.fillColor(primaryColor).fontSize(32).font('NotoSans').text(`¥${amounts.jpy.totalInclTax.toLocaleString()}`, 300, tableY, { width: 245, align: 'right' });
       tableY += 35;
+      if (amounts.vnd?.totalInclTax != null) {
+        doc.fillColor(grayColor).fontSize(14).font('NotoSans').text(`${amounts.vnd.totalInclTax.toLocaleString()} VND`, 300, tableY, { width: 245, align: 'right' });
+        tableY += 18;
+      }
       doc.fillColor(grayColor).fontSize(10).font('NotoSans').text(`(内消費税${amounts.jpy.vatRatePercent}% : ¥${amounts.jpy.vatAmount.toLocaleString()})`, 300, tableY, { width: 245, align: 'right' });
 
       doc.moveDown(5);

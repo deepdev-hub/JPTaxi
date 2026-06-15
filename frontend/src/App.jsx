@@ -57,14 +57,16 @@ function RoleHomeRedirect() {
 }
 
 import { ChatProvider } from '../contexts/ChatContext.jsx';
+import DriverNotificationWrapper from '../components/DriverNotificationWrapper.jsx';
 
 export default function App() {
   return (
     <I18nProvider>
       <ActiveRideNavigationGuard>
         <ChatProvider>
-          <Routes>
-          <Route path="/" element={<RoleHomeRedirect />} />
+          <DriverNotificationWrapper>
+            <Routes>
+            <Route path="/" element={<RoleHomeRedirect />} />
           <Route path="/home" element={<ProtectedRoute role="customer"><HomePage /></ProtectedRoute>} />
           <Route path="/driver-home" element={<ProtectedRoute role="driver"><DriverHomePage /></ProtectedRoute>} />
           <Route path="/driver_home.html" element={<Navigate to="/driver-home" replace />} />
@@ -106,8 +108,9 @@ export default function App() {
           <Route path="/xuathoadon.html" element={<Navigate to="/invoice" replace />} />
           <Route path="/driver-review" element={<ProtectedRoute role="customer"><DriverReviewPage /></ProtectedRoute>} />
           <Route path="/danhgiataixe.html" element={<Navigate to="/driver-review" replace />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
+          <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </DriverNotificationWrapper>
         </ChatProvider>
       </ActiveRideNavigationGuard>
     </I18nProvider>

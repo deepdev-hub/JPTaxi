@@ -66,7 +66,7 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const birthDate = dto.birth_date?.slice(0, 10) ?? '1990-01-01';
+    const birthDate = dto.birth_date?.slice(0, 10) ?? null;
     if (role === 'driver') {
       if (!dto.license_plate || !dto.vehicle_type || !dto.license_number) {
         throw new BadRequestException('Driver vehicle and license information is required');

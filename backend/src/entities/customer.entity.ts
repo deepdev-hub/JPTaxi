@@ -20,8 +20,8 @@ export class Customer {
   @Column({ type: 'enum', enum: GenderType, enumName: 'gender_type' })
   gender: GenderType;
 
-  @Column({ name: 'birth_date', type: 'date' })
-  birthDate: string;
+  @Column({ name: 'birth_date', type: 'date', nullable: true })
+  birthDate: string | null;
 
   @Column({ type: 'varchar', length: 15, unique: true })
   phone: string;

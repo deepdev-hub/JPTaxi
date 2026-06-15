@@ -27,7 +27,6 @@ export default function RegisterPage() {
     email: '',
     phone: '',
     gender: 'Other',
-    birthDate: '1990-01-01',
     password: '',
     confirmPassword: '',
     agreed: false,
@@ -82,7 +81,6 @@ export default function RegisterPage() {
         email: form.email.trim(),
         phone: form.phone.trim(),
         gender: form.gender,
-        birth_date: form.birthDate,
         password: form.password,
       };
 
@@ -192,10 +190,6 @@ export default function RegisterPage() {
                 </select>
               </label>
             </div>
-            <label>
-              <span>{t('register.birthDate')}</span>
-              <input type="date" value={form.birthDate} onChange={(event) => updateField('birthDate', event.target.value)} />
-            </label>
 
             <PasswordField label={t('common.password')} placeholder={t('common.password')} value={form.password} onChange={(event) => updateField('password', event.target.value)} />
             <PasswordField label={t('register.confirmPassword')} placeholder={t('register.confirmPassword')} value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} />

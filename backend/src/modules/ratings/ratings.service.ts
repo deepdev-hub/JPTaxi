@@ -15,6 +15,7 @@ import { Driver } from '../../entities/driver.entity';
 import { Rating } from '../../entities/rating.entity';
 import { Trip, TripStatusType } from '../../entities/trip.entity';
 import { Vehicle } from '../../entities/vehicle.entity';
+import { RideGateway } from '../ride/ride.gateway';
 import { SubmitRatingDto } from './dto/submit-rating.dto';
 
 @Injectable()
@@ -30,6 +31,7 @@ export class RatingsService {
     private readonly customers: Repository<Customer>,
     @InjectRepository(Vehicle)
     private readonly vehicles: Repository<Vehicle>,
+    private readonly rideGateway: RideGateway,
   ) {}
 
   async getReviewContext(tripId: number, user: { id: number; role: string }) {
@@ -87,6 +89,12 @@ export class RatingsService {
       comment: dto.comment?.trim() || null,
     });
     const saved = await this.ratings.save(row);
+    
+    this.rideGateway.emitToUser(trip.driverId, 'driver', 'driver_received_rating', {
+      tripId: saved.tripId,
+      score: saved.score,
+    });
+
     return {
       message: 'Đánh giá đã được gửi.',
       rating: this.toRatingResponse(saved),

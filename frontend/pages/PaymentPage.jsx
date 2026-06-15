@@ -19,6 +19,11 @@ export default function PaymentPage() {
   const navigate = useNavigate();
   const { formatDateTime, formatNumber, t } = useI18n();
   const formatVnd = (amount) => `${formatNumber(Number(amount) || 0)} VND`;
+  const formatDualCurrency = (vnd, jpy, fallbackRate = 166.6667) => {
+    const v = Number(vnd) || 0;
+    const y = jpy !== undefined && jpy !== null ? Number(jpy) : Math.round(v / fallbackRate);
+    return `${formatNumber(v)} VND (¥${formatNumber(y || 0)})`;
+  };
   const formatTime = (value) => value ? formatDateTime(value, {
     hour: '2-digit',
     minute: '2-digit',
@@ -136,22 +141,24 @@ export default function PaymentPage() {
                 <section className="receipt-billing">
                   <div>
                     <span>{t('booking.tripFare')}</span>
-                    <strong>{formatVnd(trip.rawFareVnd ?? trip.finalFareVnd)}</strong>
+                    <strong>{formatDualCurrency(trip.rawFareVnd ?? trip.finalFareVnd, undefined, trip.exchangeRateVndToJpy)}</strong>
                   </div>
                   <div>
                     <span>{t('payment.serviceFee')}</span>
                     <strong>
-                      {formatVnd(
+                      {formatDualCurrency(
                         Math.max(
                           0,
                           Number(trip.finalFareVnd) - Number(trip.rawFareVnd ?? trip.finalFareVnd),
                         ),
+                        undefined,
+                        trip.exchangeRateVndToJpy
                       )}
                     </strong>
                   </div>
                   <div className="receipt-total">
                     <span>{t('payment.total')}</span>
-                    <strong>{formatVnd(trip.finalFareVnd)}</strong>
+                    <strong>{formatDualCurrency(trip.finalFareVnd, trip.finalFareJpy, trip.exchangeRateVndToJpy)}</strong>
                   </div>
                 </section>
 

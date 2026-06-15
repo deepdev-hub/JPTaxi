@@ -6,6 +6,7 @@ import { Rating } from '../../entities/rating.entity';
 import { Trip } from '../../entities/trip.entity';
 import { Vehicle } from '../../entities/vehicle.entity';
 import { AuthModule } from '../auth/auth.module';
+import { RideModule } from '../ride/ride.module';
 import { RatingsController } from './ratings.controller';
 import { RatingsService } from './ratings.service';
 
@@ -13,6 +14,7 @@ import { RatingsService } from './ratings.service';
   imports: [
     TypeOrmModule.forFeature([Rating, Trip, Driver, Customer, Vehicle]),
     AuthModule,
+    RideModule,
   ],
   controllers: [RatingsController],
   providers: [RatingsService],

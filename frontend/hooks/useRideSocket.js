@@ -15,6 +15,7 @@ const RIDE_EVENTS = [
   'paymentRequested',
   'tripPaid',
   'locationUpdated',
+  'driver_received_rating',
 ];
 
 export function useRideSocket({ requestId, tripId, handlers = {} } = {}) {

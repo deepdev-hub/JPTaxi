@@ -59,7 +59,12 @@ export default function InvoiceTemplate({ invoice, id = 'invoice-print-area' }) 
             return (
               <tr key={row.code}>
                 <td>{label}</td>
-                <td>{formatYen(row.amountJpy)}</td>
+                <td>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: '1.2' }}>
+                    <span>{formatYen(row.amountJpy)}</span>
+                    {row.amountVnd != null && <small style={{ color: '#64748b', fontSize: '0.85em', marginTop: '2px' }}>{formatNumber(row.amountVnd)} VND</small>}
+                  </div>
+                </td>
               </tr>
             );
           })}
@@ -71,6 +76,11 @@ export default function InvoiceTemplate({ invoice, id = 'invoice-print-area' }) 
         <div>
           <span>{t('invoice.total')}</span>
           <strong>{formatYen(vat.totalInclTax)}</strong>
+          {amounts?.vnd?.totalInclTax != null && (
+            <div style={{ fontSize: '18px', color: '#64748b', marginBottom: '8px', fontWeight: 600 }}>
+              {formatNumber(amounts.vnd.totalInclTax)} VND
+            </div>
+          )}
           <small>{t('invoice.vatIncluded', { rate: vat.vatRatePercent, amount: formatNumber(vat.vatAmount) })}</small>
         </div>
       </div>

@@ -699,6 +699,7 @@ export default function UserInfoPage() {
                   <option value="Other">{common.other}</option>
                 </select>
               </label>
+              <label><span>{common.birthDate}</span><input type="date" value={profile.birthDate || ''} onChange={(event) => updateField('birthDate', event.target.value)} /></label>
               <label><span>{common.phone}</span><input value={profile.phone} onChange={(event) => updateField('phone', event.target.value)} /></label>
               <label className="field full">
                 <span>{userText.address}</span>

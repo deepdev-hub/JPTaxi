@@ -28,6 +28,11 @@ export default function BillConfirmPage() {
   const navigate = useNavigate();
   const { formatNumber, t } = useI18n();
   const formatVnd = (value) => `${formatNumber(Number(value) || 0)} VND`;
+  const formatDualCurrency = (vnd, jpy, fallbackRate = 166.6667) => {
+    const v = Number(vnd) || 0;
+    const y = jpy !== undefined && jpy !== null ? Number(jpy) : Math.round(v / fallbackRate);
+    return `${formatNumber(v)} VND (¥${formatNumber(y || 0)})`;
+  };
   const [selectedRoute] = useState(readSelectedRoute);
   const [estimate, setEstimate] = useState(null);
   const [bookingMode, setBookingMode] = useState('self');
@@ -193,13 +198,13 @@ export default function BillConfirmPage() {
                 <h2>{t('booking.fareDetails')}</h2>
                 {hasFareBreakdown && (
                   <dl>
-                    <div><dt>{t('booking.tripFare')}</dt><dd>{formatVnd(rawFareVnd)}</dd></div>
-                    <div><dt>{t('booking.bookingFee')}</dt><dd>{formatVnd(serviceFeeVnd)}</dd></div>
+                    <div><dt>{t('booking.tripFare')}</dt><dd>{formatDualCurrency(rawFareVnd, undefined, estimate.exchangeRateVndToJpy)}</dd></div>
+                    <div><dt>{t('booking.bookingFee')}</dt><dd>{formatDualCurrency(serviceFeeVnd, undefined, estimate.exchangeRateVndToJpy)}</dd></div>
                   </dl>
                 )}
                 <div className="total-row">
                   <span>{t('booking.total')}</span>
-                  <strong>{formatVnd(estimate.fareVnd)}</strong>
+                  <strong>{formatDualCurrency(estimate.fareVnd, estimate.fareJpy, estimate.exchangeRateVndToJpy)}</strong>
                 </div>
               </section>
             ) : null}
@@ -267,7 +272,7 @@ export default function BillConfirmPage() {
                 {t('booking.total')}
               </span>
               <strong style={{ display: 'block', fontSize: '32px', color: '#065f46', lineHeight: 1 }}>
-                {formatVnd(Number(createdRequest.estimatedFareVnd))}
+                {formatDualCurrency(createdRequest.estimatedFareVnd, createdRequest.estimatedFareJpy)}
               </strong>
             </div>
 
