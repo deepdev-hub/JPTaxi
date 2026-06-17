@@ -53,25 +53,18 @@ function matchesConfiguredPattern(origin: string): boolean {
   });
 }
 
-
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'https://jp-taxi.vercel.app',
-  'https://jp-taxi-crtm99oq9-deepdev-hubs-projects.vercel.app',
-];
-
-export const corsOrigin = (
+export function corsOrigin(
   origin: string | undefined,
-  callback: (err: Error | null, allow?: boolean) => void,
-) => {
-  if (!origin) {
-    return callback(null, true);
+  callback: (error: Error | null, allowed?: boolean) => void,
+): void {
+  if (
+    !origin ||
+    isLocalDevOrigin(origin) ||
+    configuredCorsOrigins().includes(origin) ||
+    matchesConfiguredPattern(origin)
+  ) {
+    callback(null, true);
+    return;
   }
-
-  if (allowedOrigins.includes(origin)) {
-    return callback(null, true);
-  }
-
-  return callback(new Error(`CORS blocked for origin: ${origin}`), false);
-};
+  callback(new Error(`Origin is not allowed: ${origin}`));
+}
