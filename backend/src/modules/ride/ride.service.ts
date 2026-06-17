@@ -82,7 +82,7 @@ export class RideService {
   }
 
   private get dispatchOfferTimeoutMs(): number {
-    return this.config.get<number>('DISPATCH_OFFER_TIMEOUT_MS', 8_000);
+    return this.config.get<number>('DISPATCH_OFFER_TIMEOUT_MS', 18_000);
   }
 
   private get dispatchBatchSize(): number {
