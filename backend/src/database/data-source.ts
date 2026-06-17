@@ -2,14 +2,12 @@ import 'reflect-metadata';
 import { config as loadEnv } from 'dotenv';
 import { join } from 'path';
 import { DataSource } from 'typeorm';
+import { resolveDatabaseUrl } from '../config/database-url';
 
 loadEnv({ path: join(__dirname, '..', '..', '.env') });
 loadEnv({ path: join(__dirname, '..', '..', '.env.local'), override: true });
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
-  throw new Error('DATABASE_URL is required');
-}
+const databaseUrl = resolveDatabaseUrl(process.env);
 
 export default new DataSource({
   type: 'postgres',

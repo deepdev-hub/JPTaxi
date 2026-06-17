@@ -1,6 +1,8 @@
 export type Environment = Record<string, unknown>;
 
-const requiredVariables = ['DATABASE_URL', 'JWT_SECRET'] as const;
+import { resolveDatabaseUrl } from './database-url';
+
+const requiredVariables = ['JWT_SECRET'] as const;
 
 function firstDefined(config: Environment, names: string[]): unknown {
   return names.find((name) => config[name] != null) ? config[names.find((name) => config[name] != null)!] : undefined;
@@ -72,6 +74,7 @@ export function validateEnvironment(config: Environment): Environment {
   for (const name of requiredVariables) {
     requiredString(config, name);
   }
+  const databaseUrl = resolveDatabaseUrl(config);
   if (requiredString(config, 'JWT_SECRET').length < 32) {
     throw new Error('JWT_SECRET must contain at least 32 characters');
   }
@@ -169,7 +172,7 @@ export function validateEnvironment(config: Environment): Environment {
   return {
     ...config,
     PORT: port,
-    DATABASE_URL: requiredString(config, 'DATABASE_URL'),
+    DATABASE_URL: databaseUrl,
     JWT_SECRET: requiredString(config, 'JWT_SECRET'),
     DB_SSL: booleanValue(config, 'DB_SSL'),
     DB_POOL_MAX: poolMax,

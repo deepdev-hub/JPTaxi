@@ -3,7 +3,7 @@ import { validateEnvironment } from './environment';
 describe('validateEnvironment', () => {
   it('rejects startup when required secrets are missing', () => {
     expect(() => validateEnvironment({ NODE_ENV: 'development' })).toThrow(
-      'DATABASE_URL',
+      'JWT_SECRET',
     );
   });
 
@@ -68,5 +68,34 @@ describe('validateEnvironment', () => {
       DISPATCH_LOCATION_MAX_AGE_MINUTES: 30,
       DISPATCH_SEARCH_STALE_MINUTES: 2,
     });
+  });
+
+  it('builds DATABASE_URL from Spring datasource variables when password is externalized', () => {
+    const result = validateEnvironment({
+      SPRING_DATASOURCE_URL:
+        'jdbc:postgresql://db.ficzkrauwiowwkpnirwo.supabase.co:5432/postgres?sslmode=require',
+      SPRING_DATASOURCE_USERNAME: 'postgres',
+      SPRING_DATASOURCE_PASSWORD: 'super-secret-password',
+      JWT_SECRET: 'a-local-secret-with-at-least-32-characters',
+      DB_SSL: 'true',
+    });
+
+    expect(result.DATABASE_URL).toBe(
+      'postgresql://postgres:super-secret-password@db.ficzkrauwiowwkpnirwo.supabase.co:5432/postgres?sslmode=require',
+    );
+    expect(result.DB_SSL).toBe(true);
+  });
+
+  it('injects the externalized password into DATABASE_URL when the URL omits credentials', () => {
+    const result = validateEnvironment({
+      DATABASE_URL:
+        'postgresql://postgres@db.ficzkrauwiowwkpnirwo.supabase.co:5432/postgres',
+      SPRING_DATASOURCE_PASSWORD: 'super-secret-password',
+      JWT_SECRET: 'a-local-secret-with-at-least-32-characters',
+    });
+
+    expect(result.DATABASE_URL).toBe(
+      'postgresql://postgres:super-secret-password@db.ficzkrauwiowwkpnirwo.supabase.co:5432/postgres',
+    );
   });
 });

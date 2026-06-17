@@ -34,6 +34,9 @@ DISPATCH_LOCATION_MAX_AGE_MINUTES=30
 Frontend dung `frontend/.env` local voi
 `VITE_API_BASE_URL=http://localhost:3000/api`. Cac file `.env` deu bi Git ignore.
 
+Frontend co san file mau `frontend/.env.example`. Copy file nay thanh
+`frontend/.env` khi chay local, hoac dat cung ten bien tren Vercel.
+
 ## Cai dat va database
 
 ```powershell
@@ -107,3 +110,97 @@ regression desktop/mobile. Backend production build phai ton tai truoc khi chay
 `MAIL_MODE=console` ghi email reset/hoa don ra terminal. De gui that, dat
 `MAIL_MODE=smtp` cung `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` va
 `SMTP_FROM`.
+
+## Production deploy
+
+Du an nay deploy tach rieng:
+
+- Frontend React/Vite len Vercel
+- Backend NestJS len Railway
+
+### Frontend tren Vercel
+
+- Root Directory: `frontend`
+- Framework Preset: `Vite`
+- Build Command: `npm run build`
+- Output Directory: `dist`
+
+Repo da co file [`frontend/vercel.json`](frontend/vercel.json) de giu cau hinh
+Vite va rewrite moi route SPA ve `index.html`, vi vay refresh cac route nhu
+`/login`, `/register`, `/driver-home` se khong bi 404 neu project tren Vercel
+duoc tro dung vao thu muc `frontend`.
+
+Frontend goi API qua bien:
+
+```dotenv
+VITE_API_BASE_URL=https://<backend-domain>/api
+```
+
+Dat bien nay trong Vercel Project Settings cho Preview/Production. Khong can sua
+code frontend de deploy, vi `frontend/api/client.js` da doc bien
+`VITE_API_BASE_URL`.
+
+### Backend tren Railway
+
+- Service Root Directory: `/backend`
+- Railway config file: `/backend/railway.toml`
+- Build Command: `npm ci && npm run build`
+- Start Command: `npm run start:prod`
+
+Khong dung root script `npm run start:backend` tren Railway, vi script nay chi
+phuc vu local development va dang chay `start:dev`.
+
+`backend/src/main.ts` da listen tren `0.0.0.0:$PORT`, phu hop voi Railway.
+
+### Bien moi truong production
+
+Backend Railway toi thieu can:
+
+```dotenv
+DATABASE_URL=postgresql://...
+JWT_SECRET=replace_with_a_real_secret_at_least_32_characters
+FRONTEND_URL=https://<frontend-domain>
+CORS_ALLOWED_ORIGINS=https://<frontend-domain>
+CORS_ALLOWED_ORIGIN_PATTERNS=https://*.vercel.app
+RESET_PASSWORD_URL=https://<frontend-domain>/reset-password
+UPLOAD_MODE=supabase_s3
+SUPABASE_STORAGE_ENDPOINT=https://<storage-endpoint>
+SUPABASE_STORAGE_REGION=<storage-region>
+SUPABASE_STORAGE_ACCESS_KEY=<access-key>
+SUPABASE_STORAGE_SECRET_KEY=<secret-key>
+SUPABASE_STORAGE_BUCKET=<bucket-name>
+SUPABASE_STORAGE_PUBLIC_URL=https://<public-bucket-base-url>
+```
+
+Frontend Vercel can:
+
+```dotenv
+VITE_API_BASE_URL=https://<backend-domain>/api
+```
+
+### Luu tru upload trong production
+
+Khong nen de `UPLOAD_MODE=local` tren Railway cho production. Backend ho tro san
+`supabase_s3`; dung che do nay de avatar va tai lieu tai xe khong mat sau
+redeploy hoac restart. Khi cau hinh dung, API upload se tra ve public URL tu
+bucket thay vi duong dan local dang `/uploads/...`.
+
+### Thu tu deploy
+
+1. Deploy backend len Railway truoc.
+2. Tao public domain cho service backend tren Railway.
+3. Dat `VITE_API_BASE_URL=https://<backend-domain>/api` trong Vercel.
+4. Deploy frontend len Vercel va lay frontend domain.
+5. Cap nhat `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `RESET_PASSWORD_URL` tren
+   Railway theo frontend domain thuc te.
+6. Redeploy backend neu vua sua cac bien moi truong tren Railway.
+
+### Kiem tra sau deploy
+
+- `frontend` build thanh cong va artifact khong con tro toi `localhost`.
+- Refresh route SPA tren Vercel khong bi 404.
+- Backend Railway start bang production build, khong phai watch mode.
+- CORS cho phep frontend Vercel goi REST API va websocket.
+- Upload avatar/tai lieu tra ve URL public tu object storage.
+- Dang ky, dang nhap, reset password va upload ho so tai xe hoat dong qua domain
+  production.
