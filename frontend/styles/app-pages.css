@@ -2181,6 +2181,7 @@ button.zip-search-card {
   font: inherit;
   text-align: left;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .zip-search-icon {
@@ -2230,6 +2231,7 @@ button.zip-quick-box {
   font: inherit;
   text-align: left;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .zip-quick-box > span {
@@ -2246,6 +2248,7 @@ button.zip-quick-box {
 .zip-quick-box strong {
   margin-bottom: 4px;
   font-size: 18px;
+  white-space: nowrap;
 }
 
 .zip-quick-box small {
@@ -2271,6 +2274,7 @@ button.zip-fast-button {
   text-align: left;
   border: 0;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .zip-fast-button > span:first-child {
@@ -2280,6 +2284,7 @@ button.zip-fast-button {
 .zip-fast-button strong {
   margin-bottom: 4px;
   font-size: 22px;
+  white-space: nowrap;
 }
 
 .zip-fast-button small {
@@ -2347,6 +2352,7 @@ button.zip-fast-button {
   font-size: 34px;
   background: #fff;
   border: 0;
+  white-space: nowrap;
 }
 
 .zip-zoom button:first-child {
@@ -2427,6 +2433,7 @@ button.zip-fast-button {
   background: #ecfdf5;
   border: 1px solid #a7f3d0;
   border-radius: 10px;
+  white-space: nowrap;
 }
 
 .zip-current-location-button:hover:not(:disabled) {
@@ -2544,6 +2551,7 @@ button.zip-fast-button {
   border: 1px solid #e5e7eb;
   border-radius: 13px;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+  white-space: nowrap;
 }
 
 .zip-history-item:hover {
@@ -2613,6 +2621,7 @@ button.zip-fast-button {
   background: #10b981;
   border-radius: 13px;
   box-shadow: 0 16px 34px rgba(16, 185, 129, 0.25);
+  white-space: nowrap;
 }
 
 .zip-continue-button.disabled {
@@ -2648,6 +2657,7 @@ button.zip-fast-button {
   background: #eef2f7;
   border: 1px solid #e2e8f0;
   border-radius: 11px;
+  white-space: nowrap;
 }
 
 .zip-location-map {
@@ -2727,6 +2737,7 @@ button.zip-fast-button {
   background: #fff;
   border: 0;
   border-radius: 9px;
+  white-space: nowrap;
 }
 
 .location-suggestions button:hover,
@@ -3003,6 +3014,7 @@ button.zip-fast-button {
   border-bottom: 1px solid #e2e8f0;
   transition: all 0.2s ease;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .zip-chat-item:hover {
@@ -3289,6 +3301,7 @@ button.zip-fast-button {
   border: 0;
   border-radius: 50%;
   cursor: pointer;
+  white-space: nowrap;
   transition: all 0.2s;
 }
 
