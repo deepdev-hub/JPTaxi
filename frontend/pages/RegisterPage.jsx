@@ -96,6 +96,7 @@ export default function RegisterPage() {
           vehicle_type: pendingDriver.vehicleType || '4',
           license_plate: pendingDriver.licensePlate,
           portrait_url: pendingDriver.documents?.portrait || undefined,
+          japanese_certificate_url: pendingDriver.documents?.japaneseCertificate || undefined,
           license_front_url: pendingDriver.documents?.licenseFront || undefined,
           license_back_url: pendingDriver.documents?.licenseBack || undefined,
           vehicle_photo_url: pendingDriver.documents?.vehiclePhoto || undefined,

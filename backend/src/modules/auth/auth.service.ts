@@ -73,6 +73,9 @@ export class AuthService {
       if (!dto.license_plate || !dto.vehicle_type || !dto.license_number) {
         throw new BadRequestException('Driver vehicle and license information is required');
       }
+      if (await this.vehicles.exist({ where: { licensePlate: dto.license_plate } })) {
+        throw new BadRequestException('License plate is already registered');
+      }
       if (
         !dto.portrait_url
         || !dto.japanese_certificate_url
