@@ -47,6 +47,18 @@ describe('CORS configuration', () => {
     expect(allowed).toHaveBeenCalledWith(null, true);
   });
 
+  it('allows localhost and 127.0.0.1 on any local dev port', () => {
+    process.env.FRONTEND_URL = 'http://localhost:5173';
+
+    const localhostAllowed = jest.fn();
+    corsOrigin('http://localhost:5174', localhostAllowed);
+    expect(localhostAllowed).toHaveBeenCalledWith(null, true);
+
+    const loopbackAllowed = jest.fn();
+    corsOrigin('http://127.0.0.1:4173', loopbackAllowed);
+    expect(loopbackAllowed).toHaveBeenCalledWith(null, true);
+  });
+
   it('allows configured deployment origin patterns', () => {
     process.env.CORS_ALLOWED_ORIGIN_PATTERNS = 'https://*.vercel.app';
     const allowed = jest.fn();

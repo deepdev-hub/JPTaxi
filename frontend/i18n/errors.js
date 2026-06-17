@@ -40,5 +40,9 @@ export function translateApiError(error, t, fallback) {
     return message;
   }
 
+  if (message) {
+    return message;
+  }
+
   return fallback || t('errors.UNKNOWN');
 }

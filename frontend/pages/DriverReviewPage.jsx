@@ -27,7 +27,7 @@ export default function DriverReviewPage() {
   const navigate = useNavigate();
   const { t } = useI18n();
   const [searchParams] = useSearchParams();
-  const tripId = searchParams.get('tripId') || sessionStorage.getItem('jpTaxiTripId') || getLastInvoiceTripId() || null;
+  const tripId = searchParams.get('tripId') || getLastInvoiceTripId() || null;
   const [score, setScore] = useState(0);
   const [hoverScore, setHoverScore] = useState(null);
   const [selectedTags, setSelectedTags] = useState([]);

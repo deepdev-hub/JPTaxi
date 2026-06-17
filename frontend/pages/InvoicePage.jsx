@@ -21,7 +21,6 @@ export default function InvoicePage() {
   const tripId =
     Number(searchParams.get('tripId')) ||
     getLastInvoiceTripId() ||
-    Number(sessionStorage.getItem('jpTaxiTripId')) ||
     null;
   const [invoice, setInvoice] = useState(null);
   const [email, setEmail] = useState('');
@@ -101,7 +100,7 @@ export default function InvoicePage() {
           {status && invoice ? <p className="payment-status-text" role="status">{status}</p> : null}
           {role !== 'driver' && (
             <Link 
-              to="/driver-review" 
+              to={tripId ? `/driver-review?tripId=${tripId}` : '/driver-review'} 
               style={{
                 display: 'block',
                 textAlign: 'center',

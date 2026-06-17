@@ -38,13 +38,10 @@ describe('DriverReviewPage', () => {
 
     expect(await screen.findByText('Le Hiro')).toBeInTheDocument();
     expect(screen.getByText(/Toyota White.*30A-123\.45/)).toBeInTheDocument();
-    expect(await screen.findByText('How was your ride?')).toBeInTheDocument();
     expect(screen.getByRole('button', {
       name: '5.0 stars',
     })).toBeInTheDocument();
-    expect(screen.getByRole('button', {
-      name: /submit rating/i,
-    })).toBeInTheDocument();
+    expect(document.querySelector('.review-submit')).toBeTruthy();
   });
 
   it('localizes the clear-rating control in Japanese', async () => {

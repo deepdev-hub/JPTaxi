@@ -7,8 +7,11 @@ import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 const imageExtensions: Record<string, string> = {
   'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
   'image/png': '.png',
   'image/webp': '.webp',
+  'image/heic': '.heic',
+  'image/heif': '.heif',
 };
 
 @Injectable()
@@ -19,7 +22,7 @@ export class UploadStorageService {
     const extension = imageExtensions[file.mimetype];
     if (!extension) {
       throw new BadRequestException(
-        'Only JPEG, PNG, and WebP images are supported',
+        'Only JPEG, JPG, PNG, WebP, HEIC, and HEIF images are supported',
       );
     }
     const filename = `${randomUUID()}${extension}`;

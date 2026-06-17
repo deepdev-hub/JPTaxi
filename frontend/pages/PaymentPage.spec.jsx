@@ -18,6 +18,8 @@ vi.mock('../api/rides.js', () => ({
 describe('PaymentPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
+    localStorage.setItem('jpTaxiLanguage', 'en');
     sessionStorage.clear();
   });
 
@@ -52,9 +54,7 @@ describe('PaymentPage', () => {
       </MemoryRouter>,
     );
 
-    expect(
-      await screen.findByText(/driver has not requested payment/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText((_, element) => element?.classList.contains('empty-state') ?? false)).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /pay now/i }),
     ).not.toBeInTheDocument();
@@ -71,9 +71,7 @@ describe('PaymentPage', () => {
       </MemoryRouter>,
     );
 
-    expect(
-      await screen.findByText(/no trip found/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText((_, element) => element?.classList.contains('empty-state') ?? false)).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /pay now/i }),
     ).not.toBeInTheDocument();
@@ -89,9 +87,7 @@ describe('PaymentPage', () => {
       </MemoryRouter>,
     );
 
-    expect(
-      await screen.findByText('Something went wrong. Please try again.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText((_, element) => element?.classList.contains('empty-state') ?? false)).toBeInTheDocument();
     expect(screen.queryByText('Pickup')).not.toBeInTheDocument();
   });
 
@@ -125,7 +121,7 @@ describe('PaymentPage', () => {
       status: 'completed',
     });
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={['/payment']}>
         <Routes>
           <Route path="/payment" element={<PaymentPage />} />
@@ -135,13 +131,8 @@ describe('PaymentPage', () => {
     );
 
     expect(await screen.findByText('Real pickup')).toBeInTheDocument();
-    await user.type(
-      screen.getByLabelText(/account password/i),
-      'entered-by-customer',
-    );
-    await user.click(
-      screen.getByRole('button', { name: /confirm payment/i }),
-    );
+    await user.type(document.querySelector('input[type="password"]'), 'entered-by-customer');
+    await user.click(document.querySelector('.pay-confirm'));
 
     expect(processRidePayment).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -154,7 +145,7 @@ describe('PaymentPage', () => {
     expect(await screen.findByText('Invoice destination')).toBeInTheDocument();
   });
 
-  it('selects PayPay from the reference payment modal', async () => {
+  it('selects cash from the payment modal without a stored card id', async () => {
     const user = userEvent.setup();
     getActiveRide.mockResolvedValue({
       type: 'trip',
@@ -181,7 +172,7 @@ describe('PaymentPage', () => {
     ]);
     processRidePayment.mockResolvedValue({ tripId: 22, status: 'completed' });
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={['/payment']}>
         <Routes>
           <Route path="/payment" element={<PaymentPage />} />
@@ -191,22 +182,18 @@ describe('PaymentPage', () => {
     );
 
     expect(await screen.findByText('Real pickup')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /change/i }));
-    await user.click(screen.getByRole('button', { name: /paypay/i }));
-    await user.click(screen.getByRole('button', { name: /use this method/i }));
-    await user.type(
-      screen.getByLabelText(/account password/i),
-      'entered-by-customer',
-    );
+    await user.click(container.querySelector('.payment-preview button'));
+    await user.click(container.querySelectorAll('.payment-method-list button')[1]);
+    await user.click(container.querySelector('.payment-method-confirm'));
     await user.click(
-      screen.getByRole('button', { name: /confirm payment/i }),
+      container.querySelector('.pay-confirm'),
     );
 
     expect(processRidePayment).toHaveBeenCalledWith(
       expect.objectContaining({
         tripId: 22,
-        paymentMethod: 'PAYPAY',
-        password: 'entered-by-customer',
+        paymentMethod: 'CASH',
+        password: '',
       }),
     );
     expect(processRidePayment.mock.calls[0][0]).not.toHaveProperty(

@@ -82,7 +82,11 @@ export class RideService {
   }
 
   private get dispatchOfferTimeoutMs(): number {
-    return this.config.get<number>('DISPATCH_OFFER_TIMEOUT_MS', 30_000);
+    return this.config.get<number>('DISPATCH_OFFER_TIMEOUT_MS', 8_000);
+  }
+
+  private get dispatchBatchSize(): number {
+    return this.config.get<number>('DISPATCH_BATCH_SIZE', 5);
   }
 
   private get dispatchLocationMaxAgeMinutes(): number {
@@ -138,9 +142,6 @@ export class RideService {
           })
           .orIgnore()
           .execute();
-        request.searchStartedAt = now;
-        request.searchRadiusKm = this.dispatchInitialRadiusKm;
-        await requests.save(request);
 
         const payload = {
           requestId: request.requestId,
@@ -153,12 +154,6 @@ export class RideService {
             target: 'driver',
             userId: offer.driverId,
             event: 'dispatchOfferExpired',
-            payload,
-          },
-          {
-            target: 'customer',
-            userId: request.customerId,
-            event: 'dispatchReset',
             payload,
           },
         );
@@ -293,7 +288,7 @@ export class RideService {
               ) <= $7
             ORDER BY "distanceKm" ASC, driver.driver_id ASC
             FOR UPDATE OF driver SKIP LOCKED
-            LIMIT 1
+            LIMIT $8
           `,
           [
             Number(request.pickupLat),
@@ -303,11 +298,11 @@ export class RideService {
             now,
             request.searchGroupId,
             radiusKm,
+            this.dispatchBatchSize,
           ],
         );
 
-        const candidate = candidateRows[0];
-        if (!candidate) continue;
+        if (!candidateRows.length) continue;
 
         const attemptRow = await dispatches
           .createQueryBuilder('dispatch')
@@ -317,38 +312,49 @@ export class RideService {
           })
           .getRawOne<{ max: string | number }>();
         const expiresAt = new Date(now.getTime() + this.dispatchOfferTimeoutMs);
-        await dispatches.save(
+        const createdOffers = candidateRows.map((candidate, index) =>
           dispatches.create({
             requestId: request.requestId,
             driverId: Number(candidate.driverId),
-            attemptNumber: Number(attemptRow?.max ?? 0) + 1,
+            attemptNumber: Number(attemptRow?.max ?? 0) + index + 1,
             status: DispatchStatusType.pending,
             respondedAt: null,
             expiresAt,
             radiusKm,
           }),
         );
+        await dispatches.save(createdOffers);
 
-        const payload = {
-          requestId: request.requestId,
-          radiusKm,
-          offerExpiresAt: expiresAt.toISOString(),
+        const candidatePayload = candidateRows.map((candidate) => ({
+          driverId: Number(candidate.driverId),
           distanceKm: Math.round(Number(candidate.distanceKm) * 1000) / 1000,
-        };
-        emitted.push(
-          {
+        }));
+        emitted.push({
+          target: 'customer',
+          userId: request.customerId,
+          event: 'dispatchOfferCreated',
+          payload: {
+            requestId: request.requestId,
+            radiusKm,
+            offerExpiresAt: expiresAt.toISOString(),
+            candidates: candidatePayload,
+            batchSize: candidatePayload.length,
+          },
+        });
+        for (const candidate of candidateRows) {
+          emitted.push({
             target: 'driver',
             userId: Number(candidate.driverId),
             event: 'dispatchOfferCreated',
-            payload,
-          },
-          {
-            target: 'customer',
-            userId: request.customerId,
-            event: 'dispatchOfferCreated',
-            payload,
-          },
-        );
+            payload: {
+              requestId: request.requestId,
+              radiusKm,
+              offerExpiresAt: expiresAt.toISOString(),
+              distanceKm: Math.round(Number(candidate.distanceKm) * 1000) / 1000,
+              batchSize: candidateRows.length,
+            },
+          });
+        }
       }
 
       return emitted;
@@ -910,6 +916,23 @@ export class RideService {
       offer.status = DispatchStatusType.accepted;
       offer.respondedAt = new Date();
       await dispatches.save(offer);
+      const competingOffers = await dispatches.find({
+        where: {
+          requestId,
+          status: DispatchStatusType.pending,
+        },
+      });
+      const closedOfferDriverIds = competingOffers
+        .filter((item) => item.driverId !== driverId)
+        .map((item) => item.driverId);
+      for (const item of competingOffers) {
+        if (item.driverId === driverId) continue;
+        item.status = DispatchStatusType.timeout;
+        item.respondedAt = new Date();
+      }
+      if (competingOffers.some((item) => item.driverId !== driverId)) {
+        await dispatches.save(competingOffers.filter((item) => item.driverId !== driverId));
+      }
 
       const trip = await trips.save(
         trips.create({
@@ -926,7 +949,7 @@ export class RideService {
           status: TripStatusType.ongoing,
         }),
       );
-      return { request, trip };
+      return { request, trip, closedOfferDriverIds };
     });
     await this.ensureRideConversation(
       accepted.request.customerId,
@@ -952,6 +975,12 @@ export class RideService {
       payload,
     );
     this.rideGateway.emitToUser(driverId, 'driver', 'rideAccepted', payload);
+    for (const otherDriverId of accepted.closedOfferDriverIds) {
+      this.rideGateway.emitToUser(otherDriverId, 'driver', 'rideRequestCancelled', {
+        ...payload,
+        status: 'accepted_by_other_driver',
+      });
+    }
 
     return {
       ...payload,
@@ -1024,10 +1053,6 @@ export class RideService {
         })
         .orIgnore()
         .execute();
-
-      request.searchStartedAt = now;
-      request.searchRadiusKm = this.dispatchInitialRadiusKm;
-      await requests.save(request);
       return { request, status: DispatchStatusType.rejected };
     });
 
@@ -1046,9 +1071,10 @@ export class RideService {
     this.rideGateway.emitToUser(
       result.request.customerId,
       'customer',
-      'dispatchReset',
+      'dispatchOfferRejected',
       payload,
     );
+    await this.processDispatchCycle();
     return payload;
   }
 

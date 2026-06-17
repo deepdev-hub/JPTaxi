@@ -77,7 +77,6 @@ export default function DriverDispatchPage() {
         }
       },
       rideAccepted: (payload) => {
-        if (payload?.tripId) sessionStorage.setItem('jpTaxiTripId', String(payload.tripId));
         navigate('/driver-ride-status', { replace: true });
       },
     },
@@ -142,8 +141,6 @@ export default function DriverDispatchPage() {
     setBusy(true);
     try {
       const result = await acceptDriverRide(pendingRide.requestId);
-      sessionStorage.setItem('jpTaxiRideRequestId', String(pendingRide.requestId));
-      if (result?.tripId) sessionStorage.setItem('jpTaxiTripId', String(result.tripId));
       navigate('/driver-ride-status');
     } catch (error) {
       setStatus(translateApiError(error, t, t('dispatch.driver.acceptFailed')));

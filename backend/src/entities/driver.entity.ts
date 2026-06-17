@@ -92,6 +92,14 @@ export class Driver {
   })
   driverJapaneseLevel: DriverJapaneseLevelEnum;
 
+  @Column({
+    name: 'japanese_certificate_url',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  japaneseCertificateUrl: string | null;
+
   @Column({ name: 'is_online', type: 'boolean', default: false })
   isOnline: boolean;
 

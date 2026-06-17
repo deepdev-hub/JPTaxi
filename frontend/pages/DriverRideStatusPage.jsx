@@ -68,7 +68,6 @@ export default function DriverRideStatusPage() {
         if (stopped) return;
         if (active?.type === 'trip') {
           setRide(active.data);
-          sessionStorage.setItem('jpTaxiTripId', String(active.data.tripId));
         } else {
           setRide(null);
           setStatus(t('ride.noActive'));
@@ -153,7 +152,6 @@ export default function DriverRideStatusPage() {
     setBusy(true);
     try {
       await cancelDriverRide(ride.tripId);
-      sessionStorage.removeItem('jpTaxiTripId');
       navigate('/xacnhancuocxe', { replace: true });
     } catch (error) {
       setStatus(translateApiError(error, t, t('ride.cancelFailed')));

@@ -27,6 +27,18 @@ export function configuredCorsOrigins(): string[] {
   return [...origins];
 }
 
+function isLocalDevOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return (
+      ['http:', 'https:'].includes(url.protocol) &&
+      ['localhost', '127.0.0.1'].includes(url.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 function matchesConfiguredPattern(origin: string): boolean {
   const patterns = String(process.env.CORS_ALLOWED_ORIGIN_PATTERNS ?? '')
     .split(',')
@@ -47,6 +59,7 @@ export function corsOrigin(
 ): void {
   if (
     !origin ||
+    isLocalDevOrigin(origin) ||
     configuredCorsOrigins().includes(origin) ||
     matchesConfiguredPattern(origin)
   ) {
