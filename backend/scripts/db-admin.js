@@ -9,13 +9,68 @@ config({ path: join(__dirname, '..', '.env.local'), override: true });
 
 const command = process.argv[2];
 const adminUrl = process.env.DATABASE_ADMIN_URL;
-const appUrl = process.env.DATABASE_URL;
+
+function firstDefined(names) {
+  for (const name of names) {
+    const value = String(process.env[name] ?? '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
+function injectCredentials(url, defaultUsername = '') {
+  const username =
+    url.username ||
+    firstDefined(['SPRING_DATASOURCE_USERNAME', 'DB_USERNAME']) ||
+    defaultUsername;
+  const password =
+    url.password || firstDefined(['SPRING_DATASOURCE_PASSWORD', 'DB_PASSWORD']);
+
+  if (!username) {
+    throw new Error('SPRING_DATASOURCE_USERNAME is required');
+  }
+  if (!password) {
+    throw new Error('SPRING_DATASOURCE_PASSWORD is required');
+  }
+
+  url.username = username;
+  url.password = password;
+  return url.toString();
+}
+
+function resolveUrl(names) {
+  const directUrl = firstDefined(names);
+  if (directUrl) {
+    return injectCredentials(new URL(directUrl), new URL(directUrl).username);
+  }
+
+  const jdbcUrl = firstDefined(['SPRING_DATASOURCE_URL']);
+  if (!jdbcUrl) {
+    throw new Error(
+      'DATABASE_URL or SPRING_DATASOURCE_URL is required',
+    );
+  }
+
+  const normalized = jdbcUrl.replace(/^jdbc:/, '');
+  if (!normalized.startsWith('postgresql://')) {
+    throw new Error('SPRING_DATASOURCE_URL must start with jdbc:postgresql://');
+  }
+
+  return injectCredentials(new URL(normalized));
+}
+
+const resolvedAdminUrl = resolveUrl(['DATABASE_ADMIN_URL', 'DATABASE_URL']);
+const appUrl = resolveUrl(['DATABASE_URL']);
+const ssl =
+  String(process.env.DB_SSL ?? 'false').toLowerCase() === 'true'
+    ? { rejectUnauthorized: false }
+    : undefined;
 
 if (!['create', 'reset'].includes(command)) {
   throw new Error('Usage: node scripts/db-admin.js <create|reset>');
 }
-if (!adminUrl || !appUrl) {
-  throw new Error('DATABASE_ADMIN_URL and DATABASE_URL are required');
+if (!resolvedAdminUrl || !appUrl) {
+  throw new Error('DATABASE_ADMIN_URL or DATABASE_URL is required');
 }
 
 const parsed = new URL(appUrl);
@@ -37,7 +92,7 @@ const quoteIdentifier = (value) => `"${value.replace(/"/g, '""')}"`;
 const quoteLiteral = (value) => `'${value.replace(/'/g, "''")}'`;
 
 async function main() {
-  const client = new Client({ connectionString: adminUrl });
+  const client = new Client({ connectionString: resolvedAdminUrl, ssl });
   await client.connect();
   try {
     const role = quoteIdentifier(username);
