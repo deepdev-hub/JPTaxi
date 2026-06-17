@@ -22,20 +22,13 @@ async function bootstrap() {
   app.useGlobalFilters(new ApiExceptionFilter());
 
   app.enableCors({
-    origin: allowedOrigins,
+    origin: corsOrigin,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
   const port = config.getOrThrow<number>('PORT');
   await app.listen(port, '0.0.0.0');
-
-  const allowedOrigins = process.env.CORS_ALLOWED_ORIGIN_PATTERNS
-  ?.split(',')
-  .map(origin => origin.trim())
-  .filter(Boolean);
-
 }
-
 
 bootstrap();
