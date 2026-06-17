@@ -134,7 +134,7 @@ export default function DriverRideStatusPage() {
     poll();
     const timer = window.setInterval(poll, 2000);
     const stopLocation = watchDriverLocation((position) => {
-      if (isSimulatingRef.current) return;
+      if (isSimulatingRef.current || hasSimulated.current) return;
       setDriverLocation(position);
       updateDriverLocation({ lat: position[0], lng: position[1] }).catch(() => {});
     });
