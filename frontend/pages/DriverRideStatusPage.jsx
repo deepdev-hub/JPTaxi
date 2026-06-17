@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getDriverProfile, resolveAssetUrl } from '../api/accounts.js';
 import { getDrivingRoute } from '../api/maps.js';
@@ -47,6 +47,61 @@ export default function DriverRideStatusPage() {
   const [routeMetrics, setRouteMetrics] = useState(null);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const fullRoutePathRef = useRef([]);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const isSimulatingRef = useRef(isSimulating);
+  isSimulatingRef.current = isSimulating;
+  const hasSimulated = useRef(false);
+
+  useEffect(() => {
+    if (routePath.length === 0 || hasSimulated.current) return;
+    const timeout = setTimeout(() => {
+      setIsSimulating(true);
+      hasSimulated.current = true;
+    }, 20000);
+    return () => clearTimeout(timeout);
+  }, [routePath]);
+
+  useEffect(() => {
+    if (!isSimulating || fullRoutePathRef.current.length === 0) return;
+
+    const originalRoute = fullRoutePathRef.current;
+    const totalDuration = 15000;
+    const intervalTime = 100;
+    const totalSteps = totalDuration / intervalTime;
+    let step = 0;
+
+    const timer = setInterval(() => {
+      step++;
+      const progress = step / totalSteps;
+      if (progress >= 1) {
+        clearInterval(timer);
+        setIsSimulating(false);
+        const endPoint = originalRoute[originalRoute.length - 1];
+        setDriverLocation(endPoint);
+        setRoutePath([endPoint]);
+        updateDriverLocation({ lat: endPoint[0], lng: endPoint[1] }).catch(() => {});
+        return;
+      }
+      
+      const floatIndex = progress * (originalRoute.length - 1);
+      const index = Math.floor(floatIndex);
+      const nextIndex = Math.min(index + 1, originalRoute.length - 1);
+      const remainder = floatIndex - index;
+
+      const currentPoint = originalRoute[index];
+      const nextPoint = originalRoute[nextIndex];
+      const lat = currentPoint[0] + (nextPoint[0] - currentPoint[0]) * remainder;
+      const lng = currentPoint[1] + (nextPoint[1] - currentPoint[1]) * remainder;
+
+      const currentPos = [lat, lng];
+      setDriverLocation(currentPos);
+      setRoutePath([currentPos, ...originalRoute.slice(nextIndex)]);
+      updateDriverLocation({ lat, lng }).catch(() => {});
+    }, intervalTime);
+
+    return () => clearInterval(timer);
+  }, [isSimulating]);
 
   useRideSocket({
     requestId: ride?.rideRequest?.requestId,
@@ -79,6 +134,7 @@ export default function DriverRideStatusPage() {
     poll();
     const timer = window.setInterval(poll, 2000);
     const stopLocation = watchDriverLocation((position) => {
+      if (isSimulatingRef.current) return;
       setDriverLocation(position);
       updateDriverLocation({ lat: position[0], lng: position[1] }).catch(() => {});
     });
@@ -99,16 +155,19 @@ export default function DriverRideStatusPage() {
       setRouteMetrics(null);
       return;
     }
+    if (isSimulatingRef.current) return;
     const start = driverLocation || pickup;
     Promise.all([
       getDrivingRoute(start, pickup),
       getDrivingRoute(pickup, destination),
     ])
       .then(([toPickup, tripRoute]) => {
-        setRoutePath([
+        const newPath = [
           ...toPickup.path,
           ...tripRoute.path.slice(1),
-        ]);
+        ];
+        setRoutePath(newPath);
+        fullRoutePathRef.current = newPath;
         const distanceMeters = Number(tripRoute.distanceMeters);
         const durationSeconds = Number(tripRoute.durationSeconds);
         setRouteMetrics(
@@ -128,9 +187,9 @@ export default function DriverRideStatusPage() {
   }, [driverLocation, locale, request?.requestId, t]);
 
   const routePoints = useMemo(() => request ? [
-    { key: 'pickup', label: request.pickupAddress, position: pickup, type: 'pickup' },
+    { key: 'pickup', label: request.pickupAddress, position: (isSimulatingRef.current || hasSimulated.current) && driverLocation ? driverLocation : pickup, type: 'pickup' },
     { key: 'destination', label: request.dropoffAddress, position: destination, type: 'destination' },
-  ] : [], [request]);
+  ] : [], [request, driverLocation, pickup, destination]);
 
   async function requestPayment() {
     if (!ride || busy) return;
