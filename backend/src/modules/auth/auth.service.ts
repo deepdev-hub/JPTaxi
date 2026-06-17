@@ -89,6 +89,9 @@ export class AuthService {
       if (!Object.values(VehicleTypeEnum).includes(vehicleType)) {
         throw new BadRequestException('Invalid vehicle type');
       }
+      if (await this.vehicles.exist({ where: { licensePlate: dto.license_plate } })) {
+        throw new BadRequestException('Vehicle license plate is already registered');
+      }
       const driver = await this.drivers.save(this.drivers.create({
         firstName: dto.first_name,
         lastName: dto.last_name,
