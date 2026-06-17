@@ -20,7 +20,13 @@ async function bootstrap() {
     }),
   );
   app.useGlobalFilters(new ApiExceptionFilter());
-  app.enableCors({ origin: corsOrigin, credentials: true });
+
+  app.enableCors({
+    origin: corsOrigin,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
   const port = config.getOrThrow<number>('PORT');
   await app.listen(port, '0.0.0.0');
 }
