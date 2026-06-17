@@ -50,6 +50,41 @@ describeWithDatabase('seeded authentication (e2e)', () => {
       });
   });
 
+  it('returns a specific message when driver registration reuses an existing license plate', async () => {
+    await request(app.getHttpServer())
+      .post('/api/auth/register')
+      .send({
+        role: 'driver',
+        first_name: 'New',
+        last_name: 'Driver',
+        email: 'duplicate-plate@jptaxi.local',
+        password: 'password123',
+        phone: '0901888888',
+        gender: 'Other',
+        birth_date: '1995-01-01',
+        nationality: 'Vietnam',
+        japanese_level: 'N3',
+        license_number: 'DL-987654321',
+        license_type: 'B',
+        license_expiry_date: '2028-01-01',
+        vehicle_brand: 'Toyota Vios',
+        vehicle_color: 'White',
+        vehicle_type: '4',
+        license_plate: '30A-100.01',
+        portrait_url: '/uploads/portrait.webp',
+        japanese_certificate_url: '/uploads/japanese-certificate.webp',
+        license_front_url: '/uploads/license-front.webp',
+        license_back_url: '/uploads/license-back.webp',
+        vehicle_photo_url: '/uploads/vehicle-photo.webp',
+        registration_paper_url: '/uploads/registration-paper.webp',
+      })
+      .expect(400)
+      .expect(({ body }) => {
+        expect(body.code).toBe('BAD_REQUEST');
+        expect(body.message).toBe('License plate is already registered');
+      });
+  });
+
   it('creates a fresh random 6-digit reset code for each forgot-password request', async () => {
     const first = await request(app.getHttpServer())
       .post('/api/auth/forgot-password')
