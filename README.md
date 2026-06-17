@@ -133,7 +133,7 @@ duoc tro dung vao thu muc `frontend`.
 Frontend goi API qua bien:
 
 ```dotenv
-VITE_API_BASE_URL=https://<backend-domain>/api
+VITE_API_BASE_URL=https://jptaxi-production.up.railway.app/api
 ```
 
 Dat bien nay trong Vercel Project Settings cho Preview/Production. Khong can sua
@@ -159,10 +159,11 @@ Backend Railway toi thieu can:
 ```dotenv
 DATABASE_URL=postgresql://...
 JWT_SECRET=replace_with_a_real_secret_at_least_32_characters
-FRONTEND_URL=https://<frontend-domain>
-CORS_ALLOWED_ORIGINS=https://<frontend-domain>
+FRONTEND_URL=https://jp-taxi.vercel.app
+CORS_ALLOWED_ORIGINS=https://jp-taxi.vercel.app
 CORS_ALLOWED_ORIGIN_PATTERNS=https://*.vercel.app
-RESET_PASSWORD_URL=https://<frontend-domain>/reset-password
+RESET_PASSWORD_URL=https://jp-taxi.vercel.app/reset-password
+UPLOAD_PUBLIC_BASE_URL=https://jptaxi-production.up.railway.app
 UPLOAD_MODE=supabase_s3
 SUPABASE_STORAGE_ENDPOINT=https://<storage-endpoint>
 SUPABASE_STORAGE_REGION=<storage-region>
@@ -175,7 +176,7 @@ SUPABASE_STORAGE_PUBLIC_URL=https://<public-bucket-base-url>
 Frontend Vercel can:
 
 ```dotenv
-VITE_API_BASE_URL=https://<backend-domain>/api
+VITE_API_BASE_URL=https://jptaxi-production.up.railway.app/api
 ```
 
 ### Luu tru upload trong production
@@ -189,11 +190,25 @@ bucket thay vi duong dan local dang `/uploads/...`.
 
 1. Deploy backend len Railway truoc.
 2. Tao public domain cho service backend tren Railway.
-3. Dat `VITE_API_BASE_URL=https://<backend-domain>/api` trong Vercel.
+3. Dat `VITE_API_BASE_URL=https://jptaxi-production.up.railway.app/api` trong Vercel.
 4. Deploy frontend len Vercel va lay frontend domain.
-5. Cap nhat `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `RESET_PASSWORD_URL` tren
-   Railway theo frontend domain thuc te.
+5. Cap nhat `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `RESET_PASSWORD_URL` va
+   `UPLOAD_PUBLIC_BASE_URL` tren Railway theo domain production thuc te.
 6. Redeploy backend neu vua sua cac bien moi truong tren Railway.
+
+### Checklist Railway dashboard
+
+- Root Directory: `/backend`
+- Build Command: `npm ci && npm run build`
+- Start Command: `npm run start:prod`
+- Public domain: `https://jptaxi-production.up.railway.app`
+- Runtime env toi thieu:
+  - `FRONTEND_URL=https://jp-taxi.vercel.app`
+  - `CORS_ALLOWED_ORIGINS=https://jp-taxi.vercel.app`
+  - `RESET_PASSWORD_URL=https://jp-taxi.vercel.app/reset-password`
+  - `UPLOAD_PUBLIC_BASE_URL=https://jptaxi-production.up.railway.app`
+  - `DATABASE_URL` hoac bo datasource production tuong ung
+  - `JWT_SECRET`
 
 ### Kiem tra sau deploy
 

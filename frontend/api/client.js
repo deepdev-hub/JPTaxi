@@ -1,7 +1,7 @@
 const API_BASE =
   import.meta.env.VITE_API_BASE_URL ||
   (typeof window !== 'undefined' ? window.JP_TAXI_API_BASE : '') ||
-  'http://localhost:3000/api';
+  'https://jptaxi-production.up.railway.app/api';
 
 function getAuthHeaders() {
   const token = getAuthToken();
