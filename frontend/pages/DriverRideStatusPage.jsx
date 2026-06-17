@@ -58,7 +58,7 @@ export default function DriverRideStatusPage() {
     const timeout = setTimeout(() => {
       setIsSimulating(true);
       hasSimulated.current = true;
-    }, 20000);
+    }, 15000);
     return () => clearTimeout(timeout);
   }, [routePath]);
 
