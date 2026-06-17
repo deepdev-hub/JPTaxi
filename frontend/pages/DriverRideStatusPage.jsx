@@ -66,7 +66,7 @@ export default function DriverRideStatusPage() {
     if (!isSimulating || fullRoutePathRef.current.length === 0) return;
 
     const originalRoute = fullRoutePathRef.current;
-    const totalDuration = 15000;
+    const totalDuration = 25000;
     const intervalTime = 100;
     const totalSteps = totalDuration / intervalTime;
     let step = 0;
