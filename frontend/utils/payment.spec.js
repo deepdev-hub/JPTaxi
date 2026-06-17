@@ -22,21 +22,21 @@ describe('buildPaymentPayload', () => {
     });
   });
 
-  it('builds a simulated payment without a saved-card id', () => {
+  it('builds a cash payment without a saved-card id', () => {
     const payload = buildPaymentPayload({
       tripId: 18,
       paymentMethod: {
-        code: 'PAYPAY',
+        code: 'CASH',
       },
-      password: 'user-entered-secret',
-      idempotencyKey: 'payment-18-paypay',
+      password: '',
+      idempotencyKey: 'payment-18-cash',
     });
 
     expect(payload).toEqual({
       tripId: 18,
-      paymentMethod: 'PAYPAY',
-      password: 'user-entered-secret',
-      idempotencyKey: 'payment-18-paypay',
+      paymentMethod: 'CASH',
+      password: '',
+      idempotencyKey: 'payment-18-cash',
     });
   });
 });

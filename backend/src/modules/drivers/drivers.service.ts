@@ -130,6 +130,7 @@ export class DriversService {
       gender: d.gender,
       idNumber: d.idNumber,
       avatarUrl: d.avatarUrl,
+      japaneseCertificateUrl: d.japaneseCertificateUrl,
       status: d.status,
       isOnline: d.isOnline,
       lastSeenAt: d.lastSeenAt,
@@ -161,6 +162,7 @@ export class DriversService {
       })),
       documents: {
         portrait: d.avatarUrl,
+        japaneseCertificate: d.japaneseCertificateUrl,
         licenseFront: primaryLicense?.frontImageUrl ?? null,
         licenseBack: primaryLicense?.backImageUrl ?? null,
         vehiclePhoto: vehicle?.vehiclePhotoUrl ?? null,
@@ -276,6 +278,11 @@ export class DriversService {
 
     if (dto.portrait !== undefined) {
       driver.avatarUrl = dto.portrait;
+    }
+    if (dto.japaneseCertificate !== undefined) {
+      driver.japaneseCertificateUrl = dto.japaneseCertificate;
+    }
+    if (dto.portrait !== undefined || dto.japaneseCertificate !== undefined) {
       await this.drivers.save(driver);
     }
 

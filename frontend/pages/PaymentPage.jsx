@@ -9,10 +9,8 @@ import { useI18n } from '../i18n/I18nProvider.jsx';
 import { translateApiError } from '../i18n/errors.js';
 import '../styles/app-pages.css';
 
-const simulatedMethods = [
-  { key: 'simulated-cash', code: 'CASH', labelKey: 'payment.cash', icon: '$' },
-  { key: 'simulated-paypay', code: 'PAYPAY', label: 'PayPay', icon: 'P' },
-  { key: 'simulated-apple-pay', code: 'APPLE_PAY', label: 'Apple Pay', icon: 'A' },
+const fallbackMethods = [
+  { key: 'cash', code: 'CASH', labelKey: 'payment.cash', icon: '$' },
 ];
 
 export default function PaymentPage() {
@@ -44,7 +42,7 @@ export default function PaymentPage() {
       label: t('payment.cardEnding', { brand: item.brand, lastFour: item.lastFour }),
       icon: 'C',
     })),
-    ...simulatedMethods.map((item) => ({
+    ...fallbackMethods.map((item) => ({
       ...item,
       label: item.labelKey ? t(item.labelKey) : item.label,
     })),
@@ -72,8 +70,7 @@ export default function PaymentPage() {
         setTrip(nextTrip);
         setMethods(nextMethods);
         const preferred = nextMethods.find((item) => item.isDefault) ?? nextMethods[0];
-        setSelectedKey(preferred ? `card-${preferred.paymentMethodId}` : 'simulated-cash');
-        sessionStorage.setItem('jpTaxiTripId', String(nextTrip.tripId));
+        setSelectedKey(preferred ? `card-${preferred.paymentMethodId}` : 'cash');
       })
       .catch((error) => setStatus(translateApiError(error, t, t('payment.loadFailed'))))
       .finally(() => {

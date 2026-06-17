@@ -47,6 +47,7 @@ const driverMenu = [
 
 const documentUploadTypes = {
   portrait: 'portrait',
+  japaneseCertificate: 'japanese_certificate',
   licenseFront: 'license_front',
   licenseBack: 'license_back',
   vehiclePhoto: 'vehicle_photo',
@@ -421,6 +422,7 @@ export default function DriverInfoPage() {
   const vehiclePhoto = resolveAssetUrl(profile.documents?.vehiclePhoto || vehicle.vehiclePhotoUrl);
   const driverDocuments = [
     { key: 'portrait', label: driverText.portraitPhoto, icon: '🧑', url: profile.documents?.portrait || profile.avatarUrl },
+    { key: 'japaneseCertificate', label: t('driverRegister.japaneseCertificate'), icon: '🎓', url: profile.documents?.japaneseCertificate || profile.japaneseCertificateUrl },
     { key: 'licenseFront', label: driverText.licenseFront, icon: '📄', url: profile.documents?.licenseFront || primaryLicense.frontImageUrl },
     { key: 'licenseBack', label: driverText.licenseBack, icon: '🪪', url: profile.documents?.licenseBack || primaryLicense.backImageUrl },
     { key: 'vehiclePhoto', label: driverText.vehicleInfo, icon: '🚗', url: profile.documents?.vehiclePhoto || vehicle.vehiclePhotoUrl },

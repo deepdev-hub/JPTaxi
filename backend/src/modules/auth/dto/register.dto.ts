@@ -83,6 +83,10 @@ export class RegisterDto {
 
   @IsOptional()
   @IsString()
+  japanese_certificate_url?: string;
+
+  @IsOptional()
+  @IsString()
   license_front_url?: string;
 
   @IsOptional()

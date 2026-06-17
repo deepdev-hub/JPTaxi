@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { createRideRequest, estimateRide, getActiveRide } from '../api/rides.js';
 import { resolveAssetUrl } from '../api/accounts.js';
 import InteractiveRouteMap from '../components/InteractiveRouteMap.jsx';
@@ -7,6 +7,7 @@ import Footer from '../components/Footer.jsx';
 import PageShell from '../components/PageShell.jsx';
 import Topbar from '../components/Topbar.jsx';
 import Modal from '../components/Modal.jsx';
+import { readBillConfirmRoute } from '../utils/rideRouteState.js';
 import { useI18n } from '../i18n/I18nProvider.jsx';
 import '../styles/booking.css';
 
@@ -26,6 +27,7 @@ function readSelectedRoute() {
 
 export default function BillConfirmPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { formatNumber, t } = useI18n();
   const formatVnd = (value) => `${formatNumber(Number(value) || 0)} VND`;
   const formatDualCurrency = (vnd, jpy, fallbackRate = 166.6667) => {
@@ -33,7 +35,7 @@ export default function BillConfirmPage() {
     const y = jpy !== undefined && jpy !== null ? Number(jpy) : Math.round(v / fallbackRate);
     return `${formatNumber(v)} VND (¥${formatNumber(y || 0)})`;
   };
-  const [selectedRoute] = useState(readSelectedRoute);
+  const [selectedRoute] = useState(() => readBillConfirmRoute(searchParams) || readSelectedRoute());
   const [estimate, setEstimate] = useState(null);
   const [bookingMode, setBookingMode] = useState('self');
   const [proxyPassenger, setProxyPassenger] = useState({ name: '', phone: '' });
@@ -47,6 +49,7 @@ export default function BillConfirmPage() {
   useEffect(() => {
     let ignored = false;
     import('../api/customers.js').then(({ fetchCustomerProfile }) => {
+      if (typeof fetchCustomerProfile !== 'function') return;
       fetchCustomerProfile()
         .then(data => { if (!ignored && data) setProfile(data); })
         .catch(() => {});
@@ -121,7 +124,6 @@ export default function BillConfirmPage() {
         if (active?.type === 'request') request = active.data;
         else throw error;
       }
-      sessionStorage.setItem('jpTaxiRideRequestId', String(request.requestId));
       setCreatedRequest(request);
       setShowSummaryModal(true);
       setSubmitting(false);
@@ -280,7 +282,7 @@ export default function BillConfirmPage() {
               <button className="secondary-button" onClick={() => setShowSummaryModal(false)} type="button" style={{ background: '#f1f5f9', border: 'none', color: '#475569', fontWeight: 700 }}>
                 {t('common.close')}
               </button>
-              <Link className="primary-button" to="/search-car" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
+              <Link className="primary-button" to={`/search-car?requestId=${createdRequest.requestId}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
                 {t('reservation.findDriver')}
               </Link>
             </div>

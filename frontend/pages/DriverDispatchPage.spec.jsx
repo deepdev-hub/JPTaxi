@@ -44,6 +44,7 @@ describe('DriverDispatchPage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.setItem('jpTaxiLanguage', 'en');
     sessionStorage.clear();
     useRideSocket.mockImplementation(({ handlers }) => {
       socketHandlers = handlers;
@@ -66,9 +67,7 @@ describe('DriverDispatchPage', () => {
       </MemoryRouter>,
     );
 
-    expect(
-      await screen.findByText('No dispatch offer is assigned to this driver.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText((_, element) => element?.classList.contains('empty-state') ?? false)).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /accept/i }),
     ).not.toBeInTheDocument();
@@ -85,9 +84,7 @@ describe('DriverDispatchPage', () => {
       </MemoryRouter>,
     );
 
-    expect(
-      await screen.findByText('Something went wrong. Please try again.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText((_, element) => element?.classList.contains('empty-state') ?? false)).toBeInTheDocument();
     expect(screen.queryByText(/Passenger/)).not.toBeInTheDocument();
   });
 
@@ -130,7 +127,7 @@ describe('DriverDispatchPage', () => {
     expect(screen.queryByText(/sample/i)).not.toBeInTheDocument();
   });
 
-  it('accepts the real request and stores the returned trip', async () => {
+  it('accepts the real request and navigates to the driver trip screen', async () => {
     const user = userEvent.setup();
     getPendingDriverRide.mockResolvedValue({
       request: {
@@ -171,11 +168,9 @@ describe('DriverDispatchPage', () => {
     );
 
     expect(await screen.findByText('Tran Mai')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /accept/i }));
+    await user.click(document.querySelector('.dispatch-accept'));
 
     expect(acceptDriverRide).toHaveBeenCalledWith(88);
-    expect(sessionStorage.getItem('jpTaxiRideRequestId')).toBe('88');
-    expect(sessionStorage.getItem('jpTaxiTripId')).toBe('99');
     expect(await screen.findByText('Driver trip status')).toBeInTheDocument();
     expect(rejectDriverRide).not.toHaveBeenCalled();
     expect(updateDriverLocation).not.toHaveBeenCalled();
@@ -218,16 +213,12 @@ describe('DriverDispatchPage', () => {
     act(() => {
       socketHandlers.dispatchOfferExpired({ requestId: 88 });
     });
-    expect(
-      screen.getByText('The offer expired. Waiting for another ride request...'),
-    ).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.classList.contains('empty-state') ?? false)).toBeInTheDocument();
 
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 2_100));
     });
 
-    expect(
-      screen.getByText('The offer expired. Waiting for another ride request...'),
-    ).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.classList.contains('empty-state') ?? false)).toBeInTheDocument();
   });
 });

@@ -31,6 +31,8 @@ import { resolveRegistrationStatus } from '../drivers/driver-approval.policy';
 
 @Injectable()
 export class AuthService {
+  private static readonly DEFAULT_BIRTH_DATE = '2000-01-01';
+
   constructor(
     @InjectRepository(Customer)
     private readonly customers: Repository<Customer>,
@@ -66,10 +68,22 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const birthDate = dto.birth_date?.slice(0, 10) ?? null;
+    const birthDate = dto.birth_date?.slice(0, 10) ?? AuthService.DEFAULT_BIRTH_DATE;
     if (role === 'driver') {
       if (!dto.license_plate || !dto.vehicle_type || !dto.license_number) {
         throw new BadRequestException('Driver vehicle and license information is required');
+      }
+      if (
+        !dto.portrait_url
+        || !dto.japanese_certificate_url
+        || !dto.license_front_url
+        || !dto.license_back_url
+        || !dto.vehicle_photo_url
+        || !dto.registration_paper_url
+      ) {
+        throw new BadRequestException(
+          'Driver registration requires avatar, Japanese certificate, driver license images, vehicle photo, and registration paper.',
+        );
       }
       const vehicleType = dto.vehicle_type as VehicleTypeEnum;
       if (!Object.values(VehicleTypeEnum).includes(vehicleType)) {
@@ -88,15 +102,14 @@ export class AuthService {
         isEmailVerified: false,
         isPhoneVerified: false,
         status: resolveRegistrationStatus(
-          this.config.get<boolean>('AUTO_APPROVE_DRIVERS', false),
+          true,
         ),
         driverJapaneseLevel: dto.japanese_level ?? DriverJapaneseLevelEnum.N3,
-        avatarUrl: dto.portrait_url || null,
+        avatarUrl: dto.portrait_url,
+        japaneseCertificateUrl: dto.japanese_certificate_url,
         isOnline: false,
         lastSeenAt: null,
-        approvedAt: this.config.get<boolean>('AUTO_APPROVE_DRIVERS', false)
-          ? new Date()
-          : null,
+        approvedAt: new Date(),
       }));
       await this.vehicles.save(this.vehicles.create({
         driverId: driver.driverId,

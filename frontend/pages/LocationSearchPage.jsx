@@ -15,6 +15,7 @@ import ProfileAvatarSlot from '../components/ProfileAvatarSlot.jsx';
 import Topbar from '../components/Topbar.jsx';
 import { normalizePlace } from '../utils/place.js';
 import { formatDistance, formatDuration, getCurrentPosition } from '../utils/routePlanner.js';
+import { buildBillConfirmQuery } from '../utils/rideRouteState.js';
 import { useI18n } from '../i18n/I18nProvider.jsx';
 import '../styles/app-pages.css';
 
@@ -246,13 +247,14 @@ export default function LocationSearchPage() {
       setStatus(t('location.selectRouteFirst'));
       return;
     }
-    sessionStorage.setItem('jpTaxiSelectedRoute', JSON.stringify({
+    const route = {
       pickup,
       destination,
       routePath,
       routeMetrics,
-    }));
-    navigate('/bill-confirm');
+    };
+    sessionStorage.setItem('jpTaxiSelectedRoute', JSON.stringify(route));
+    navigate(`/bill-confirm?${buildBillConfirmQuery(route)}`);
   }
 
   const listPlaces = suggestions.length

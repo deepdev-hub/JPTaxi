@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,11 +8,16 @@ import {
   getActiveRide,
 } from '../api/rides.js';
 import BillConfirmPage from './BillConfirmPage.jsx';
+import { buildBillConfirmQuery } from '../utils/rideRouteState.js';
 
 vi.mock('../api/rides.js', () => ({
   createRideRequest: vi.fn(),
   estimateRide: vi.fn(),
   getActiveRide: vi.fn(),
+}));
+
+vi.mock('../api/customers.js', () => ({
+  fetchCustomerProfile: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../components/InteractiveRouteMap.jsx', () => ({
@@ -39,48 +44,37 @@ const selectedRoute = {
 describe('BillConfirmPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.setItem('jpTaxiLanguage', 'vi');
     sessionStorage.clear();
   });
 
   it('shows an empty state when no route was selected', () => {
-    render(
-      <MemoryRouter>
+    const { container } = render(
+      <MemoryRouter initialEntries={['/bill-confirm']}>
         <BillConfirmPage />
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('No route selected.')).toBeInTheDocument();
+    expect(container.querySelector('.empty-state')).toBeInTheDocument();
     expect(estimateRide).not.toHaveBeenCalled();
   });
 
   it('shows the server estimate error without a fallback fare', async () => {
-    sessionStorage.setItem(
-      'jpTaxiSelectedRoute',
-      JSON.stringify(selectedRoute),
-    );
     estimateRide.mockRejectedValue(new Error('Routing provider unavailable.'));
 
-    render(
-      <MemoryRouter>
+    const { container } = render(
+      <MemoryRouter initialEntries={[`/bill-confirm?${buildBillConfirmQuery(selectedRoute)}`]}>
         <BillConfirmPage />
       </MemoryRouter>,
     );
 
-    expect(
-      await screen.findByText('Unable to calculate the fare.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(screen.queryByText(/VND/)).not.toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: /confirm booking/i }),
-    ).toBeDisabled();
+    expect(container.querySelector('.primary-button')).toBeDisabled();
   });
 
   it('validates proxy passenger data and submits no client-side fare', async () => {
     const user = userEvent.setup();
-    sessionStorage.setItem(
-      'jpTaxiSelectedRoute',
-      JSON.stringify(selectedRoute),
-    );
     estimateRide.mockResolvedValue({
       distanceMeters: 8_200,
       durationSeconds: 1_500,
@@ -90,32 +84,26 @@ describe('BillConfirmPage', () => {
     createRideRequest.mockResolvedValue({ requestId: 77 });
     getActiveRide.mockResolvedValue(null);
 
-    render(
-      <MemoryRouter initialEntries={['/bill-confirm']}>
+    const { container } = render(
+      <MemoryRouter initialEntries={[`/bill-confirm?${buildBillConfirmQuery(selectedRoute)}`]}>
         <Routes>
           <Route path="/bill-confirm" element={<BillConfirmPage />} />
-          <Route path="/reservation-summary" element={<div>Reservation summary</div>} />
+          <Route path="/search-car" element={<div>Driver search</div>} />
         </Routes>
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('131,000 VND')).toBeInTheDocument();
-    await user.click(
-      screen.getByRole('button', { name: /for someone else/i }),
-    );
-    await user.click(
-      screen.getByRole('button', { name: /confirm booking/i }),
-    );
-    expect(
-      screen.getByText('Enter the passenger name and phone number.'),
-    ).toBeInTheDocument();
+    await screen.findByText(/131,000 VND/);
+    const modeButtons = container.querySelectorAll('.mode-button');
+    await user.click(modeButtons[1]);
+    await user.click(container.querySelector('.primary-button'));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(createRideRequest).not.toHaveBeenCalled();
 
-    await user.type(screen.getByLabelText(/passenger name/i), 'Proxy Rider');
-    await user.type(screen.getByLabelText(/passenger phone/i), '0901888888');
-    await user.click(
-      screen.getByRole('button', { name: /confirm booking/i }),
-    );
+    const textboxes = screen.getAllByRole('textbox');
+    await user.type(textboxes[1], 'Proxy Rider');
+    await user.type(textboxes[2], '0901888888');
+    await user.click(container.querySelector('.primary-button'));
 
     expect(createRideRequest).toHaveBeenCalledWith({
       pickupAddress: 'Real pickup address',
@@ -129,14 +117,13 @@ describe('BillConfirmPage', () => {
       actualPassengerName: 'Proxy Rider',
       actualPassengerPhone: '0901888888',
     });
-    expect(await screen.findByText('Reservation summary')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.querySelector('.modal-backdrop')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('link', { name: /tìm tài xế|配車/i })).toHaveAttribute('href', '/search-car?requestId=77');
   });
 
   it('renders the reference vehicle and fare cards from the server estimate', async () => {
-    sessionStorage.setItem(
-      'jpTaxiSelectedRoute',
-      JSON.stringify(selectedRoute),
-    );
     estimateRide.mockResolvedValue({
       distanceMeters: 8_200,
       durationSeconds: 1_500,
@@ -147,14 +134,14 @@ describe('BillConfirmPage', () => {
     });
 
     const { container } = render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[`/bill-confirm?${buildBillConfirmQuery(selectedRoute)}`]}>
         <BillConfirmPage />
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('121,000 VND')).toBeInTheDocument();
-    expect(screen.getByText('10,000 VND')).toBeInTheDocument();
-    expect(screen.getByText('131,000 VND')).toBeInTheDocument();
+    expect(await screen.findByText(/121,000 VND/)).toBeInTheDocument();
+    expect(screen.getByText(/10,000 VND/)).toBeInTheDocument();
+    expect(screen.getByText(/131,000 VND/)).toBeInTheDocument();
     expect(container.querySelector('.vehicle-card')).toBeInTheDocument();
     expect(container.querySelector('.fare-card')).toBeInTheDocument();
   });

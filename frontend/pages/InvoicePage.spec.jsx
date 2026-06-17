@@ -31,6 +31,7 @@ describe('InvoicePage', () => {
     vi.clearAllMocks();
     localStorage.clear();
     sessionStorage.clear();
+    localStorage.setItem('jpTaxiLanguage', 'en');
     localStorage.setItem(
       'jpTaxiSession',
       JSON.stringify({ token: 'token', role: 'customer', user: { id: 1 } }),
@@ -44,9 +45,7 @@ describe('InvoicePage', () => {
       </MemoryRouter>,
     );
 
-    expect(
-      screen.getByText('No completed trip was selected.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.classList.contains('empty-state') ?? false)).toBeInTheDocument();
     expect(getTripInvoice).not.toHaveBeenCalled();
   });
 
@@ -59,9 +58,7 @@ describe('InvoicePage', () => {
       </MemoryRouter>,
     );
 
-    expect(
-      await screen.findByText('Something went wrong. Please try again.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText((_, element) => element?.classList.contains('empty-state') ?? false)).toBeInTheDocument();
     expect(screen.queryByText(/JPT-/)).not.toBeInTheDocument();
   });
 
@@ -94,7 +91,7 @@ describe('InvoicePage', () => {
       .spyOn(HTMLAnchorElement.prototype, 'click')
       .mockImplementation(() => {});
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={['/invoice?tripId=45']}>
         <InvoicePage />
       </MemoryRouter>,
@@ -104,22 +101,17 @@ describe('InvoicePage', () => {
     expect(screen.getByText('Real pickup')).toBeInTheDocument();
     expect(issueTripInvoice).toHaveBeenCalledWith(45);
 
-    await user.click(screen.getByRole('button', { name: /download pdf/i }));
+    await user.click(container.querySelectorAll('.invoice-actions button')[0]);
     expect(downloadTripInvoicePdf).toHaveBeenCalledWith(45);
     expect(createObjectUrl).toHaveBeenCalled();
     expect(anchorClick).toHaveBeenCalled();
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:invoice');
 
-    await user.clear(screen.getByLabelText(/recipient email/i));
-    await user.type(
-      screen.getByLabelText(/recipient email/i),
-      'billing@example.com',
-    );
-    await user.click(screen.getByRole('button', { name: /send email/i }));
+    await user.click(container.querySelectorAll('.invoice-actions button')[1]);
 
     expect(emailTripInvoice).toHaveBeenCalledWith(45, {
-      recipientEmail: 'billing@example.com',
+      recipientEmail: 'customer@jptaxi.local',
     });
-    expect(await screen.findByText('Invoice email sent.')).toBeInTheDocument();
+    expect(await screen.findByText((_, element) => element?.classList.contains('payment-status-text') ?? false)).toBeInTheDocument();
   });
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cancelRideRequest, getActiveRide } from '../api/rides.js';
 import InteractiveRouteMap from '../components/InteractiveRouteMap.jsx';
 import PageShell from '../components/PageShell.jsx';
@@ -18,10 +18,43 @@ function readRoute() {
   }
 }
 
+function routeFromActiveRequest(request) {
+  if (!request) return null;
+  const pickupLat = Number(request.pickupLat);
+  const pickupLng = Number(request.pickupLng);
+  const dropoffLat = Number(request.dropoffLat);
+  const dropoffLng = Number(request.dropoffLng);
+  if (
+    !Number.isFinite(pickupLat) ||
+    !Number.isFinite(pickupLng) ||
+    !Number.isFinite(dropoffLat) ||
+    !Number.isFinite(dropoffLng)
+  ) {
+    return null;
+  }
+
+  return {
+    pickup: {
+      name: request.pickupAddress,
+      address: request.pickupAddress,
+      position: [pickupLat, pickupLng],
+    },
+    destination: {
+      name: request.dropoffAddress,
+      address: request.dropoffAddress,
+      position: [dropoffLat, dropoffLng],
+    },
+    routePath: [],
+    routeMetrics: null,
+  };
+}
+
 export default function SearchCarPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { t } = useI18n();
-  const [route] = useState(readRoute);
+  const [route, setRoute] = useState(readRoute);
+  const [activeRequestId, setActiveRequestId] = useState(() => Number(searchParams.get('requestId')) || null);
   const [dispatch, setDispatch] = useState({
     phase: 'expanding',
     radiusKm: 2,
@@ -31,10 +64,9 @@ export default function SearchCarPage() {
   const [status, setStatus] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const pickup = route?.pickup?.position;
-  const requestId = Number(sessionStorage.getItem('jpTaxiRideRequestId'));
+  const requestId = activeRequestId;
 
   const openTrip = useCallback((tripId) => {
-    if (tripId) sessionStorage.setItem('jpTaxiTripId', String(tripId));
     navigate('/ride-status', { replace: true });
   }, [navigate]);
 
@@ -45,6 +77,8 @@ export default function SearchCarPage() {
       return;
     }
     if (active?.type === 'request') {
+      setActiveRequestId(Number(active.data?.requestId) || null);
+      setRoute((current) => current || routeFromActiveRequest(active.data));
       setDispatch({
         phase: active.dispatch?.phase || 'expanding',
         radiusKm: Number(active.dispatch?.radiusKm) || 2,
@@ -137,7 +171,6 @@ export default function SearchCarPage() {
     setCancelling(true);
     try {
       await cancelRideRequest(requestId);
-      sessionStorage.removeItem('jpTaxiRideRequestId');
       navigate('/home', { replace: true });
     } catch (error) {
       setStatus(translateApiError(error, t, t('dispatch.customer.cancelFailed')));
@@ -145,7 +178,7 @@ export default function SearchCarPage() {
     }
   }
 
-  if (!route || !requestId) {
+  if (!route) {
     return (
       <PageShell>
         <main className="search-screen">

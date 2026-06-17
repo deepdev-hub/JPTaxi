@@ -4,14 +4,14 @@ export function buildPaymentPayload({
   password,
   idempotencyKey = crypto.randomUUID(),
 }) {
-  const simulatedMethods = new Set(['CASH', 'PAYPAY', 'APPLE_PAY']);
+  const fallbackMethods = new Set(['CASH']);
   const numericTripId = Number(tripId);
   if (!Number.isInteger(numericTripId) || numericTripId <= 0) {
     throw new Error('A valid trip is required.');
   }
   const methodCode = paymentMethod?.brand || paymentMethod?.code;
-  const isSimulated = simulatedMethods.has(methodCode);
-  if (!methodCode || (!isSimulated && !paymentMethod?.paymentMethodId)) {
+  const isFallbackMethod = fallbackMethods.has(methodCode);
+  if (!methodCode || (!isFallbackMethod && !paymentMethod?.paymentMethodId)) {
     throw new Error('Select a saved payment method.');
   }
   if (methodCode !== 'CASH' && !String(password ?? '').trim()) {
@@ -23,7 +23,7 @@ export function buildPaymentPayload({
     password,
     idempotencyKey,
   };
-  if (!isSimulated) {
+  if (!isFallbackMethod) {
     payload.paymentMethodId = Number(paymentMethod.paymentMethodId);
   }
   return payload;

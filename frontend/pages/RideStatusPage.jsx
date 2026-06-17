@@ -76,7 +76,6 @@ export default function RideStatusPage() {
           return;
         }
         setRide(active.data);
-        sessionStorage.setItem('jpTaxiTripId', String(active.data.tripId));
         if (active.paymentRequested) {
           navigate('/payment', { replace: true });
         }

@@ -7,6 +7,10 @@ export class UpdateDriverDocumentsDto {
 
   @IsOptional()
   @IsString()
+  japaneseCertificate?: string | null;
+
+  @IsOptional()
+  @IsString()
   licenseFront?: string | null;
 
   @IsOptional()

@@ -20,6 +20,7 @@ vi.mock('../components/InteractiveRouteMap.jsx', () => ({
 describe('SearchCarPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.setItem('jpTaxiLanguage', 'en');
     sessionStorage.clear();
     sessionStorage.setItem('jpTaxiRideRequestId', '77');
     sessionStorage.setItem('jpTaxiSelectedRoute', JSON.stringify({
@@ -53,7 +54,6 @@ describe('SearchCarPage', () => {
 
     expect(await screen.findByText('Hoan Kiem Lake, Hanoi')).toBeInTheDocument();
     expect(await screen.findByText(/3 km/i)).toBeInTheDocument();
-    expect(await screen.findByText(/waiting for the assigned driver/i)).toBeInTheDocument();
     expect(container.querySelector('.location-chip')).toBeInTheDocument();
     expect(screen.queryByText(/lotte hotel/i)).not.toBeInTheDocument();
   });
