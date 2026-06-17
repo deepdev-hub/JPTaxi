@@ -32,12 +32,13 @@ export function translateApiError(error, t, fallback) {
     return message;
   }
 
-  if (!translated.startsWith('errors.')) {
-    return translated;
+  // If we have a clear 4xx message from backend, show it instead of a generic unknown error.
+  if (message && error?.status && error.status >= 400 && error.status < 500) {
+    return message;
   }
 
-  if (message && error?.status && error.status < 500) {
-    return message;
+  if (!translated.startsWith('errors.')) {
+    return translated;
   }
 
   if (message) {
