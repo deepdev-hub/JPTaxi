@@ -4020,6 +4020,7 @@ button.zip-fast-button {
   border-radius: 16px;
   border: 0;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .tracking-actions a,
