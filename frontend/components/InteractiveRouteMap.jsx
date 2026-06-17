@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import L from 'leaflet';
-import { MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap } from 'react-leaflet';
+import { MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useI18n } from '../i18n/I18nProvider.jsx';
 
@@ -95,6 +95,15 @@ function MapInteractionLock({ disabled, scrollWheelZoom }) {
   return null;
 }
 
+function MapClickHandler({ onMapClick }) {
+  useMapEvents({
+    click(e) {
+      if (onMapClick) onMapClick(e.latlng);
+    },
+  });
+  return null;
+}
+
 function RouteControls({ currentLocationPosition, fitCurrentLocation, mapZoom, positions, t }) {
   const map = useMap();
   const handleFit = () => {
@@ -152,6 +161,7 @@ export default function InteractiveRouteMap({
   routeSummary = null,
   scrollWheelZoom = interactive,
   currentLocationLabel = null,
+  onMapClick,
 }) {
   const { t } = useI18n();
   const [hoveredPoint, setHoveredPoint] = useState(null);
@@ -217,6 +227,7 @@ export default function InteractiveRouteMap({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+        <MapClickHandler onMapClick={onMapClick} />
         {showRoute && routePath?.length ? (
           <>
             {alternateRoutePath?.length ? (

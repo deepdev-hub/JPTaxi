@@ -5,6 +5,7 @@ import Footer from '../components/Footer.jsx';
 import Modal from '../components/Modal.jsx';
 import PageShell from '../components/PageShell.jsx';
 import Topbar from '../components/Topbar.jsx';
+import LocationPickerModal from '../components/LocationPickerModal.jsx';
 import {
   getCustomerProfile,
   resolveAssetUrl,
@@ -109,12 +110,15 @@ const savedPlaceTypes = ['home', 'work', 'favorite'];
 function mapSavedPlaceDrafts(places = []) {
   return savedPlaceTypes.reduce((drafts, type) => {
     const place = places.find((item) => item?.type === type);
-    drafts[type] = place?.address || '';
+    drafts[type] = {
+      address: place?.address || '',
+      position: place?.latitude && place?.longitude ? [place.latitude, place.longitude] : null,
+    };
     return drafts;
   }, {
-    home: '',
-    work: '',
-    favorite: '',
+    home: { address: '', position: null },
+    work: { address: '', position: null },
+    favorite: { address: '', position: null },
   });
 }
 
@@ -201,10 +205,11 @@ export default function UserInfoPage() {
   const [loginHistoryError, setLoginHistoryError] = useState('');
   const [savedPlaces, setSavedPlaces] = useState([]);
   const [savedPlaceDrafts, setSavedPlaceDrafts] = useState({
-    home: '',
-    work: '',
-    favorite: '',
+    home: { address: '', position: null },
+    work: { address: '', position: null },
+    favorite: { address: '', position: null },
   });
+  const [mapPickerTarget, setMapPickerTarget] = useState(null);
   const [savedPlaceSaving, setSavedPlaceSaving] = useState('');
   const avatarCropperRef = useRef(null);
   const text = profileText[language] || profileText.ja;
@@ -297,12 +302,19 @@ export default function UserInfoPage() {
     setProfile((current) => ({ ...current, [field]: value }));
   }
 
-  function updateSavedPlaceDraft(type, value) {
-    setSavedPlaceDrafts((current) => ({ ...current, [type]: value }));
+  function updateSavedPlaceDraft(type, value, position = undefined) {
+    setSavedPlaceDrafts((current) => ({
+      ...current,
+      [type]: {
+        address: value,
+        position: position !== undefined ? position : current[type].position,
+      },
+    }));
   }
 
   async function persistSavedPlace(type, explicitAddress) {
-    const address = String(explicitAddress ?? savedPlaceDrafts[type] ?? '').trim();
+    const draft = savedPlaceDrafts[type];
+    const address = String(explicitAddress ?? draft.address ?? '').trim();
     const existingPlace = savedPlaces.find((item) => item?.type === type);
 
     if (!address) {
@@ -317,6 +329,8 @@ export default function UserInfoPage() {
     const saved = await savePlace(type, {
       label: getSavedPlaceLabel(type),
       address,
+      latitude: draft.position?.[0],
+      longitude: draft.position?.[1],
     });
 
     const nextPlaces = savedPlaces
@@ -422,7 +436,7 @@ export default function UserInfoPage() {
         email: profile.email,
         avatarUrl: profile.avatarUrl || null,
       });
-      await persistSavedPlace('home', savedPlaceDrafts.home);
+      await persistSavedPlace('home', savedPlaceDrafts.home.address);
       setProfile(normalizeProfile(updated));
       setModal('saved');
       setStatus(text.status.dbSaved);
@@ -703,11 +717,14 @@ export default function UserInfoPage() {
               <label><span>{common.phone}</span><input value={profile.phone} onChange={(event) => updateField('phone', event.target.value)} /></label>
               <label className="field full">
                 <span>{userText.address}</span>
-                <input
-                  value={savedPlaceDrafts.home}
-                  onChange={(event) => updateSavedPlaceDraft('home', event.target.value)}
-                  placeholder="Home address"
-                />
+                <div className="saved-place-input-wrapper">
+                  <input
+                    value={savedPlaceDrafts.home.address}
+                    onChange={(event) => updateSavedPlaceDraft('home', event.target.value)}
+                    placeholder="Home address"
+                  />
+                  <button type="button" className="map-picker-btn" onClick={() => setMapPickerTarget('home')} aria-label={t('map.label')}>📍</button>
+                </div>
               </label>
             </div>
           </section>
@@ -744,11 +761,14 @@ export default function UserInfoPage() {
               {savedPlaceTypes.map((type) => (
                 <article className="account-card" key={type}>
                   <strong>{type === 'home' ? 'Home' : type === 'work' ? 'Work' : 'Favorite'}</strong>
-                  <input
-                    value={savedPlaceDrafts[type]}
-                    onChange={(event) => updateSavedPlaceDraft(type, event.target.value)}
-                    placeholder={`${type === 'home' ? 'Home' : type === 'work' ? 'Work' : 'Favorite'} address`}
-                  />
+                  <div className="saved-place-input-wrapper">
+                    <input
+                      value={savedPlaceDrafts[type].address}
+                      onChange={(event) => updateSavedPlaceDraft(type, event.target.value)}
+                      placeholder={`${type === 'home' ? 'Home' : type === 'work' ? 'Work' : 'Favorite'} address`}
+                    />
+                    <button type="button" className="map-picker-btn" onClick={() => setMapPickerTarget(type)} aria-label={t('map.label')}>📍</button>
+                  </div>
                   <button
                     className="link-btn"
                     type="button"
@@ -935,6 +955,17 @@ export default function UserInfoPage() {
           )}
           {modal && !['account', 'avatar', 'card', 'addCard', 'password', 'loginHistory'].includes(modal) && <p className="modal-copy">{status || userText.modal.defaultCopy}</p>}
         </Modal>
+      <LocationPickerModal
+        open={!!mapPickerTarget}
+        title={t('location.destination')}
+        initialPosition={mapPickerTarget ? savedPlaceDrafts[mapPickerTarget]?.position : null}
+        onClose={() => setMapPickerTarget(null)}
+        onSelect={(place) => {
+          if (mapPickerTarget) {
+            updateSavedPlaceDraft(mapPickerTarget, place.address || place.name, place.position);
+          }
+        }}
+      />
       </main>
     </PageShell>
   );
