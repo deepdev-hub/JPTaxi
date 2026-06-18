@@ -20,6 +20,9 @@ import { setLastInvoiceTripId } from '../utils/invoiceSession.js';
 import { formatDistance, formatDuration } from '../utils/routePlanner.js';
 import '../styles/app-pages.css';
 
+const DRIVER_LOCATION_EPSILON = 0.0001;
+const DRIVER_LOCATION_SYNC_INTERVAL_MS = 10_000;
+
 function watchDriverLocation(onLocation) {
   if (!navigator.geolocation) return () => {};
   const id = navigator.geolocation.watchPosition(
@@ -28,6 +31,14 @@ function watchDriverLocation(onLocation) {
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 },
   );
   return () => navigator.geolocation.clearWatch(id);
+}
+
+function shouldSyncDriverLocation(nextPoint, lastPoint, lastSentAt) {
+  if (!lastPoint) return true;
+  const moved =
+    Math.abs(nextPoint.lat - lastPoint.lat) > DRIVER_LOCATION_EPSILON ||
+    Math.abs(nextPoint.lng - lastPoint.lng) > DRIVER_LOCATION_EPSILON;
+  return moved || Date.now() - lastSentAt >= DRIVER_LOCATION_SYNC_INTERVAL_MS;
 }
 
 const formatDualCurrency = (vnd, jpy, fallbackRate = 166.6667) => {
@@ -44,7 +55,7 @@ export default function DriverRideStatusPage() {
   const [profile, setProfile] = useState(null);
   const [driverLocation, setDriverLocation] = useState(null);
   const [routePath, setRoutePath] = useState([]);
-  const [routeMetrics, setRouteMetrics] = useState(null);
+  const [routeStats, setRouteStats] = useState(null);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -78,9 +89,15 @@ export default function DriverRideStatusPage() {
     }
     poll();
     const timer = window.setInterval(poll, 2000);
+    let lastSentAt = 0;
+    let lastPoint = null;
     const stopLocation = watchDriverLocation((position) => {
       setDriverLocation(position);
-      updateDriverLocation({ lat: position[0], lng: position[1] }).catch(() => {});
+      const nextPoint = { lat: position[0], lng: position[1] };
+      if (!shouldSyncDriverLocation(nextPoint, lastPoint, lastSentAt)) return;
+      lastPoint = nextPoint;
+      lastSentAt = Date.now();
+      updateDriverLocation(nextPoint).catch(() => {});
     });
     return () => {
       stopped = true;
@@ -96,36 +113,53 @@ export default function DriverRideStatusPage() {
   useEffect(() => {
     if (!pickup || !destination) {
       setRoutePath([]);
-      setRouteMetrics(null);
+      setRouteStats(null);
       return;
     }
-    const start = driverLocation || pickup;
-    Promise.all([
-      getDrivingRoute(start, pickup),
-      getDrivingRoute(pickup, destination),
-    ])
-      .then(([toPickup, tripRoute]) => {
-        setRoutePath([
-          ...toPickup.path,
-          ...tripRoute.path.slice(1),
-        ]);
-        const distanceMeters = Number(tripRoute.distanceMeters);
-        const durationSeconds = Number(tripRoute.durationSeconds);
-        setRouteMetrics(
+    let ignored = false;
+    getDrivingRoute(pickup, destination)
+      .then((route) => {
+        if (ignored) return;
+        setRoutePath(Array.isArray(route.path) ? route.path : []);
+        const distanceMeters = Number(route.distanceMeters);
+        const durationSeconds = Number(route.durationSeconds);
+        setRouteStats(
           Number.isFinite(distanceMeters) && Number.isFinite(durationSeconds)
-            ? {
-                distance: formatDistance(distanceMeters),
-                duration: formatDuration(durationSeconds, distanceMeters, locale),
-              }
+            ? { distanceMeters, durationSeconds }
             : null,
         );
       })
-      .catch((error) => {
+      .catch(() => {
+        if (ignored) return;
         setRoutePath([]);
-        setRouteMetrics(null);
-        setStatus(translateApiError(error, t, t('ride.routeFailed')));
+        setRouteStats(null);
+        setStatus(t('ride.routeFailed'));
       });
-  }, [driverLocation, locale, request?.requestId, t]);
+    return () => {
+      ignored = true;
+    };
+  }, [
+    ride?.tripId,
+    request?.requestId,
+    request?.pickupLat,
+    request?.pickupLng,
+    request?.dropoffLat,
+    request?.dropoffLng,
+  ]);
+
+  const routeMetrics = useMemo(
+    () => routeStats
+      ? {
+          distance: formatDistance(routeStats.distanceMeters),
+          duration: formatDuration(
+            routeStats.durationSeconds,
+            routeStats.distanceMeters,
+            locale,
+          ),
+        }
+      : null,
+    [locale, routeStats],
+  );
 
   const routePoints = useMemo(() => request ? [
     { key: 'pickup', label: request.pickupAddress, position: pickup, type: 'pickup' },
@@ -186,13 +220,11 @@ export default function DriverRideStatusPage() {
               alternateRoutePath={[]}
               className="tracking-route-map"
               compact
-              currentLocation={driverLocation}
               driverLocation={driverLocation}
               route={routePoints}
               routePath={routePath}
               routeSummary={routeMetrics ? `${routeMetrics.distance} - ${routeMetrics.duration}` : ''}
               scrollWheelZoom
-              showCurrentLocation={Boolean(driverLocation)}
               showDetails={false}
               showDriver={Boolean(driverLocation)}
             />
