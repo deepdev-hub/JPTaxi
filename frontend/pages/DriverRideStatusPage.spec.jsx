@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getDriverProfile } from '../api/accounts.js';
 import { getDrivingRoute } from '../api/maps.js';
@@ -31,6 +31,10 @@ vi.mock('../api/rides.js', () => ({
 vi.mock('../components/InteractiveRouteMap.jsx', () => ({
   default: () => <div data-testid="driver-trip-map" />,
 }));
+
+const PAYMENT_SENT_JA = '\u304a\u5ba2\u69d8\u306b\u652f\u6255\u3044\u4f9d\u983c\u3092\u9001\u4fe1\u3057\u307e\u3057\u305f\u3002';
+const ROUTE_FAILED_JA = '\u30eb\u30fc\u30c8\u3092\u8aad\u307f\u8fbc\u3081\u307e\u305b\u3093\u3067\u3057\u305f\u3002';
+const GENERIC_SERVER_ERROR_JA = '\u30b5\u30fc\u30d0\u30fc\u3067\u30a8\u30e9\u30fc\u304c\u767a\u751f\u3057\u307e\u3057\u305f\u3002';
 
 function buildActiveTrip() {
   return {
@@ -71,6 +75,7 @@ describe('DriverRideStatusPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.setItem('jpTaxiLanguage', 'ja');
+    sessionStorage.clear();
     watchSuccess = undefined;
     Object.defineProperty(navigator, 'geolocation', {
       configurable: true,
@@ -116,14 +121,10 @@ describe('DriverRideStatusPage', () => {
     });
     expect(await screen.findByText('8.0 km')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', {
-      name: /支払いを依頼|request payment/i,
-    }));
+    await user.click(container.querySelector('.tracking-message'));
 
     expect(requestDriverPayment).toHaveBeenCalledWith(91);
-    expect(await screen.findByText(
-      'お客様に支払い依頼を送信しました。',
-    )).toBeInTheDocument();
+    expect(await screen.findByText(PAYMENT_SENT_JA)).toBeInTheDocument();
   });
 
   it('updates driver location from geolocation without recalculating the route', async () => {
@@ -161,8 +162,37 @@ describe('DriverRideStatusPage', () => {
     const { container } = renderPage();
 
     expect(await screen.findByText('Nguyen An')).toBeInTheDocument();
-    expect(await screen.findByText('ルートを読み込めませんでした。')).toBeInTheDocument();
-    expect(screen.queryByText('サーバーでエラーが発生しました。')).not.toBeInTheDocument();
+    expect(await screen.findByText(ROUTE_FAILED_JA)).toBeInTheDocument();
+    expect(screen.queryByText(GENERIC_SERVER_ERROR_JA)).not.toBeInTheDocument();
     expect(container.querySelector('.driver-tracking-card')).toBeInTheDocument();
   });
+
+  it('navigates to the driver invoice when a payment-requested trip disappears from active polling', async () => {
+    getActiveDriverRide
+      .mockResolvedValueOnce({
+        ...buildActiveTrip(),
+        paymentRequested: true,
+      })
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue(null);
+
+    render(
+      <MemoryRouter initialEntries={['/driver-ride-status']}>
+        <I18nProvider>
+          <Routes>
+            <Route path="/driver-ride-status" element={<DriverRideStatusPage />} />
+            <Route path="/driver-invoice" element={<div>Driver invoice destination</div>} />
+          </Routes>
+        </I18nProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Nguyen An')).toBeInTheDocument();
+
+    await waitFor(
+      () => expect(screen.getByText('Driver invoice destination')).toBeInTheDocument(),
+      { timeout: 4_000 },
+    );
+    expect(sessionStorage.getItem('jpTaxiLastInvoiceTripId')).toBe('91');
+  }, 10_000);
 });
