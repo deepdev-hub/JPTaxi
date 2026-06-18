@@ -253,7 +253,7 @@ export function validateEnvironment(config: Environment): Environment {
     DISPATCH_OFFER_TIMEOUT_MS: integerValue(
       config,
       'DISPATCH_OFFER_TIMEOUT_MS',
-      8_000,
+      18_000,
       1_000,
     ),
     DISPATCH_BATCH_SIZE: integerValue(

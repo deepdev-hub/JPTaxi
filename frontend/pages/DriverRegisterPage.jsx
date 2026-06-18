@@ -282,7 +282,7 @@ export default function DriverRegisterPage() {
                         disabled={Boolean(uploadingKey) || submitting}
                         onChange={(event) => handleDocumentUpload(field, event.target.files?.[0])}
                       />
-                      <small>{isUploading ? t('common.sending') : (documents[field.key] || t('driverRegister.uploadHint'))}</small>
+                      {isUploading && <small>{t('common.sending')}</small>}
                     </label>
                   );
                 })}
