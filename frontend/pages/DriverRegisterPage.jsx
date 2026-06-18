@@ -172,7 +172,7 @@ export default function DriverRegisterPage() {
         <section className="driver-register-layout">
           <div className="driver-register-intro">
             <span className="eyebrow">🚖 {t('driverRegister.eyebrow')}</span>
-            <h1>{t('driverRegister.title')}</h1>
+            <h1 style={{ whiteSpace: 'pre-line' }}>{t('driverRegister.title')}</h1>
             <p>{t('driverRegister.copy')}</p>
 
             <div className="driver-register-benefits">

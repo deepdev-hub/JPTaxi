@@ -32,7 +32,7 @@
 }
 
 .intro p {
-  max-width: 510px;
+  max-width: 100%;
   margin: 16px 0 0;
   color: #334155;
   font-size: 15px;

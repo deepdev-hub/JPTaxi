@@ -2167,7 +2167,7 @@
   display: flex;
   align-items: flex-start;
   gap: 16px;
-  width: 500px;
+  width: 580px;
   margin-bottom: 18px;
   padding: 22px 26px;
   color: #1f2937;
@@ -2208,7 +2208,7 @@ button.zip-search-card {
 .zip-quick-row {
   display: flex;
   gap: 14px;
-  width: 500px;
+  width: 580px;
   margin-bottom: 24px;
 }
 
@@ -2246,18 +2246,20 @@ button.zip-quick-box {
 .zip-quick-box strong {
   margin-bottom: 4px;
   font-size: 18px;
+  white-space: nowrap;
 }
 
 .zip-quick-box small {
   color: #9ca3af;
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .zip-fast-button {
   display: flex;
   align-items: center;
   gap: 18px;
-  width: 500px;
+  width: 580px;
   min-height: 92px;
   padding: 18px 24px;
   color: #fff;
@@ -4004,6 +4006,7 @@ button.zip-fast-button {
   font-size: 17px;
   font-weight: 800;
   text-decoration: none;
+  white-space: nowrap;
   border-radius: 16px;
   border: 0;
   cursor: pointer;

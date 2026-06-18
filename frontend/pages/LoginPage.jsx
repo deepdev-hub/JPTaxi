@@ -229,7 +229,7 @@ export default function LoginPage() {
         <section className="auth-layout">
           <div className="intro">
             <span className="eyebrow">🚕 {t('auth.eyebrow')}</span>
-            <h1>{t('auth.loginHero')}</h1>
+            <h1 style={{ whiteSpace: 'pre-line' }}>{t('auth.loginHero')}</h1>
             <p>{t('auth.loginHeroCopy')}</p>
 
             <div className="benefits" aria-label={t('auth.features')}>
