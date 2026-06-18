@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getDriverProfile, resolveAssetUrl } from '../api/accounts.js';
 import { getDrivingRoute } from '../api/maps.js';
@@ -16,7 +16,7 @@ import { useRideSocket } from '../hooks/useRideSocket.js';
 import { useI18n } from '../i18n/I18nProvider.jsx';
 import { translateApiError } from '../i18n/errors.js';
 import { useChatNotification } from '../contexts/ChatContext.jsx';
-import { setLastInvoiceTripId } from '../utils/invoiceSession.js';
+import { getLastInvoiceTripId, setLastInvoiceTripId } from '../utils/invoiceSession.js';
 import { formatDistance, formatDuration } from '../utils/routePlanner.js';
 import '../styles/app-pages.css';
 
@@ -58,13 +58,33 @@ export default function DriverRideStatusPage() {
   const [routeStats, setRouteStats] = useState(null);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const lastActiveTripIdRef = useRef(getLastInvoiceTripId());
+  const awaitingInvoiceRef = useRef(false);
+
+  function openDriverInvoice(tripId) {
+    const normalizedTripId = Number(tripId);
+    if (Number.isFinite(normalizedTripId) && normalizedTripId > 0) {
+      lastActiveTripIdRef.current = normalizedTripId;
+      setLastInvoiceTripId(normalizedTripId);
+      navigate(`/driver-invoice?tripId=${normalizedTripId}`, { replace: true });
+      return;
+    }
+    navigate('/driver-invoice', { replace: true });
+  }
 
   useRideSocket({
     requestId: ride?.rideRequest?.requestId,
     tripId: ride?.tripId,
     handlers: {
       rideRequestCancelled: () => navigate('/xacnhancuocxe', { replace: true }),
-      tripPaid: () => navigate('/driver-invoice', { replace: true }),
+      tripPaid: (payload) => {
+        awaitingInvoiceRef.current = true;
+        openDriverInvoice(
+          payload?.tripId
+            ?? ride?.tripId
+            ?? lastActiveTripIdRef.current,
+        );
+      },
     },
   });
 
@@ -81,8 +101,20 @@ export default function DriverRideStatusPage() {
         const active = await getActiveDriverRide();
         if (stopped) return;
         if (active?.type === 'trip') {
+          const activeTripId = Number(active.data?.tripId);
+          if (Number.isFinite(activeTripId) && activeTripId > 0) {
+            lastActiveTripIdRef.current = activeTripId;
+            setLastInvoiceTripId(activeTripId);
+          }
+          if (active.paymentRequested) awaitingInvoiceRef.current = true;
           setRide(active.data);
         } else {
+          const invoiceTripId = lastActiveTripIdRef.current ?? getLastInvoiceTripId();
+          if (awaitingInvoiceRef.current && invoiceTripId) {
+            setRide(null);
+            openDriverInvoice(invoiceTripId);
+            return;
+          }
           setRide(null);
           setStatus(t('ride.noActive'));
         }
@@ -194,6 +226,8 @@ export default function DriverRideStatusPage() {
     setStatus('');
     try {
       await requestDriverPayment(ride.tripId);
+      awaitingInvoiceRef.current = true;
+      lastActiveTripIdRef.current = ride.tripId;
       setLastInvoiceTripId(ride.tripId);
       setStatus(t('ride.paymentSent'));
     } catch (error) {
